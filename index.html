@@ -1,463 +1,597 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Executive Manager Dashboard</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & ReactDOM -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel for JSX -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        .sticky-col { position: sticky; left: 0; background: white; z-index: 20; border-right: 1px solid #e2e8f0; }
-        .today-line { width: 2px; border-left: 2px dashed #ef4444; height: 100%; position: absolute; z-index: 10; pointer-events: none; }
-    </style>
-</head>
-<body class="bg-[#f8fafc]">
-    <div id="root"></div>
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  Plus, 
+  Search, 
+  CheckCircle2, 
+  Clock, 
+  AlertCircle, 
+  Filter,
+  X,
+  Trash2,
+  LayoutDashboard,
+  CheckSquare,
+  Users,
+  Calendar,
+  TrendingUp,
+  Zap,
+  Edit2,
+  RefreshCw,
+  ChevronRight,
+  Layers,
+  Database,
+  Tag,
+  RotateCcw,
+  Upload,
+  Briefcase,
+  History,
+  CalendarRange,
+  LayoutGrid,
+  PauseCircle,
+  Activity
+} from 'lucide-react';
 
-    <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef } = React;
+const App = () => {
+  // --- ระบบเก็บข้อมูลถาวร (Persistence) ---
+  const [tasks, setTasks] = useState(() => {
+    try {
+      const saved = localStorage.getItem('vibetask_manager_executive_v10');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
 
-        // Helper for Lucide Icons
-        const Icon = ({ name, size = 18, className = "" }) => {
-            const ref = useRef(null);
-            useEffect(() => {
-                if (window.lucide) {
-                    ref.current.innerHTML = window.lucide.icons[name]?.toSvg({
-                        width: size,
-                        height: size,
-                        'stroke-width': 2,
-                        class: className
-                    }) || '';
-                }
-            }, [name, size, className]);
-            return <span ref={ref} className={`inline-flex items-center justify-center ${className}`} />;
-        };
+  const [lastUpdated, setLastUpdated] = useState(() => localStorage.getItem('vibetask_ts_v10') || 'Ready to Sync');
+  const [viewMode, setViewMode] = useState('Board'); 
+  const [hierarchyMode, setHierarchyMode] = useState('All'); 
+  const [statFilter, setStatFilter] = useState('All');
+  const [filterDept, setFilterDept] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
 
-        const App = () => {
-            const [tasks, setTasks] = useState(() => {
-                try {
-                    const saved = localStorage.getItem('vibetask_gh_final_v11');
-                    return saved ? JSON.parse(saved) : [];
-                } catch (e) { return []; }
-            });
+  const [formData, setFormData] = useState({ 
+    title: '', dept: '', priority: 'Medium', status: 'To Do', category: '', notes: '',
+    startDate: '', dueDate: '', parentId: null
+  });
 
-            const [lastUpdated, setLastUpdated] = useState(() => localStorage.getItem('vibetask_ts_gh_v11') || 'Ready');
-            const [viewMode, setViewMode] = useState('Board'); 
-            const [hierarchyMode, setHierarchyMode] = useState('All'); 
-            const [statFilter, setStatFilter] = useState('All');
-            const [filterDept, setFilterDept] = useState('All');
-            const [searchQuery, setSearchQuery] = useState('');
-            const [isModalOpen, setIsModalOpen] = useState(false);
-            const [editingTask, setEditingTask] = useState(null);
+  const timelineContainerRef = useRef(null);
 
-            const [formData, setFormData] = useState({ 
-                title: '', dept: '', priority: 'Medium', status: 'To Do', category: '', notes: '',
-                startDate: '', dueDate: '', parentId: null
-            });
+  useEffect(() => {
+    localStorage.setItem('vibetask_manager_executive_v10', JSON.stringify(tasks));
+  }, [tasks]);
 
-            const timelineContainerRef = useRef(null);
+  const recordChange = () => {
+    const now = new Date().toLocaleString('th-TH', { 
+      day: '2-digit', month: '2-digit', year: 'numeric', 
+      hour: '2-digit', minute: '2-digit' 
+    });
+    setLastUpdated(now);
+    localStorage.setItem('vibetask_ts_v10', now);
+  };
 
-            useEffect(() => {
-                localStorage.setItem('vibetask_gh_final_v11', JSON.stringify(tasks));
-            }, [tasks]);
+  const cleanText = (text) => {
+    if (!text) return "";
+    return text.replace(/\s*\(.*?\)\s*/g, '').trim();
+  };
 
-            const recordChange = () => {
-                const now = new Date().toLocaleString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-                setLastUpdated(now);
-                localStorage.setItem('vibetask_ts_gh_v11', now);
-            };
+  const parseDate = (str) => {
+    if (!str || str === '-') return null;
+    const parts = str.split('/');
+    if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]);
+    const d = new Date(str);
+    return isNaN(d.getTime()) ? null : d;
+  };
 
-            const cleanText = (text) => {
-                if (!text) return "";
-                return text.replace(/\s*\(.*?\)\s*/g, '').trim();
-            };
+  // --- Robust CSV Parser ---
+  const parseCSV = (text) => {
+    const rows = [];
+    let currentRow = [];
+    let currentField = '';
+    let inQuotes = false;
 
-            const parseDate = (str) => {
-                if (!str || str === '-') return null;
-                const parts = str.split('/');
-                if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]);
-                const d = new Date(str);
-                return isNaN(d.getTime()) ? null : d;
-            };
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (char === '"') {
+        if (inQuotes && text[i + 1] === '"') {
+          currentField += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        currentRow.push(currentField);
+        currentField = '';
+      } else if (char === '\n' && !inQuotes) {
+        currentRow.push(currentField);
+        rows.push(currentRow);
+        currentRow = [];
+        currentField = '';
+      } else if (char !== '\r') {
+        currentField += char;
+      }
+    }
+    if (currentField || currentRow.length > 0) {
+      currentRow.push(currentField);
+      rows.push(currentRow);
+    }
 
-            const parseCSV = (text) => {
-                const rows = [];
-                let currentRow = [];
-                let currentField = '';
-                let inQuotes = false;
-                for (let i = 0; i < text.length; i++) {
-                    const char = text[i];
-                    if (char === '"') {
-                        if (inQuotes && text[i + 1] === '"') { currentField += '"'; i++; }
-                        else { inQuotes = !inQuotes; }
-                    } else if (char === ',' && !inQuotes) { currentRow.push(currentField); currentField = ''; }
-                    else if (char === '\n' && !inQuotes) { currentRow.push(currentField); rows.push(currentRow); currentRow = []; currentField = ''; }
-                    else if (char !== '\r') { currentField += char; }
-                }
-                if (currentField || currentRow.length > 0) { currentRow.push(currentField); rows.push(currentRow); }
+    return rows.slice(1).map((cols, idx) => {
+      const name = cols[0]?.trim();
+      if (!name) return null;
 
-                return rows.slice(1).map((cols, idx) => {
-                    const name = cols[0]?.trim();
-                    if (!name) return null;
-                    const statusRaw = cols[11]?.trim() || '';
-                    let status = 'To Do';
-                    if (statusRaw === 'On Hold') status = 'On Hold';
-                    else if (statusRaw === 'Completed' || statusRaw === 'Done') status = 'Done';
-                    else if (statusRaw === 'In Progress') status = 'In Progress';
-                    const priorityRaw = (cols[8] || '').toLowerCase();
-                    let priority = 'Medium';
-                    if (priorityRaw.includes('low')) priority = 'Low';
-                    if (priorityRaw.includes('high')) priority = 'High';
-                    const isSub = (name.toLowerCase().includes('sub') || (cols[3] || '').toLowerCase().includes('sub'));
-                    return {
-                        id: `task-${idx}-${Date.now()}`,
-                        title: name, category: cols[3]?.trim() || '-', dept: cols[4]?.trim() || '-',
-                        dueDate: cols[5]?.trim() || '-', notes: cols[6]?.trim() || '',
-                        priority, startDate: cols[10]?.trim() || '', status, parentId: isSub ? 'sub-task' : null
-                    };
-                }).filter(t => t !== null);
-            };
+      const statusRaw = cols[11]?.trim() || '';
+      let status = 'To Do';
+      if (statusRaw === 'On Hold') status = 'On Hold';
+      else if (statusRaw === 'Completed' || statusRaw === 'Done') status = 'Done';
+      else if (statusRaw === 'In Progress') status = 'In Progress';
 
-            const handleFileUpload = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const data = parseCSV(ev.target.result);
-                    setTasks(data);
-                    recordChange();
-                    setStatFilter('All');
-                };
-                reader.readAsText(file);
-            };
+      const priorityRaw = (cols[8] || '').toLowerCase();
+      let priority = 'Medium';
+      if (priorityRaw.includes('low')) priority = 'Low';
+      if (priorityRaw.includes('high')) priority = 'High';
 
-            const activePool = useMemo(() => tasks.filter(t => t.status !== 'On Hold'), [tasks]);
-            const hierarchyPool = useMemo(() => {
-                return activePool.filter(t => {
-                    if (hierarchyMode === 'Main') return !t.parentId;
-                    if (hierarchyMode === 'Sub') return !!t.parentId;
-                    return true;
-                });
-            }, [activePool, hierarchyMode]);
+      const isSub = (name.toLowerCase().includes('sub') || (cols[3] || '').toLowerCase().includes('sub'));
 
-            const dynamicStats = useMemo(() => ({
-                total: hierarchyPool.length,
-                finished: hierarchyPool.filter(t => t.status === 'Done').length,
-                working: hierarchyPool.filter(t => t.status === 'In Progress' || t.status === 'To Do').length
-            }), [hierarchyPool]);
+      return {
+        id: `task-${idx}-${Date.now()}`,
+        title: name,
+        category: cols[3]?.trim() || '-',
+        dept: cols[4]?.trim() || '-',
+        dueDate: cols[5]?.trim() || '-',
+        notes: cols[6]?.trim() || '',
+        priority: priority,
+        startDate: cols[10]?.trim() || '',
+        status: status,
+        parentId: isSub ? 'sub-task' : null
+      };
+    }).filter(t => t !== null);
+  };
 
-            const depts = useMemo(() => ['All', ...new Set(activePool.map(t => t.dept || '-'))], [activePool]);
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const data = parseCSV(ev.target.result);
+      setTasks(data);
+      recordChange();
+      setStatFilter('All');
+    };
+    reader.readAsText(file);
+  };
 
-            const displayTasks = useMemo(() => {
-                return hierarchyPool.filter(t => {
-                    const search = searchQuery.toLowerCase();
-                    const matchSearch = t.title.toLowerCase().includes(search) || t.notes.toLowerCase().includes(search);
-                    const matchDept = filterDept === 'All' || t.dept === filterDept;
-                    let matchStat = true;
-                    if (statFilter === 'Done') matchStat = t.status === 'Done';
-                    if (statFilter === 'Working') matchStat = (t.status === 'In Progress' || t.status === 'To Do');
-                    return matchSearch && matchDept && matchStat;
-                });
-            }, [hierarchyPool, searchQuery, filterDept, statFilter]);
+  // --- Logic Filtering & Stats ---
+  const activePool = useMemo(() => tasks.filter(t => t.status !== 'On Hold'), [tasks]);
 
-            const timelineQueue = useMemo(() => {
-                return hierarchyPool.filter(t => t.status !== 'Done')
-                    .sort((a,b) => (parseDate(a.startDate) || new Date(8640000000000000)) - (parseDate(b.startDate) || new Date(8640000000000000)));
-            }, [hierarchyPool]);
+  const hierarchyPool = useMemo(() => {
+    return activePool.filter(t => {
+      if (hierarchyMode === 'Main') return !t.parentId;
+      if (hierarchyMode === 'Sub') return !!t.parentId;
+      return true;
+    });
+  }, [activePool, hierarchyMode]);
 
-            const timelineDates = useMemo(() => {
-                if (timelineQueue.length === 0) return [];
-                let min = new Date(); let max = new Date();
-                timelineQueue.forEach(t => {
-                    const start = parseDate(t.startDate); const end = parseDate(t.dueDate);
-                    if (start && start < min) min = new Date(start); if (end && end > max) max = new Date(end);
-                });
-                min.setDate(min.getDate() - 5); max.setDate(max.getDate() + 20);
-                const dates = []; let curr = new Date(min);
-                while (curr <= max) { dates.push(new Date(curr)); curr.setDate(curr.getDate() + 1); }
-                return dates;
-            }, [timelineQueue]);
+  const dynamicStats = useMemo(() => {
+    const doneCount = hierarchyPool.filter(t => t.status === 'Done').length;
+    const workingCount = hierarchyPool.filter(t => t.status === 'In Progress' || t.status === 'To Do').length;
+    return {
+      total: hierarchyPool.length,
+      finished: doneCount,
+      working: workingCount
+    };
+  }, [hierarchyPool]);
 
-            const timelineMonths = useMemo(() => {
-                if (timelineDates.length === 0) return [];
-                const months = [];
-                timelineDates.forEach((date, index) => {
-                    const monthLabel = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-                    if (months.length === 0 || months[months.length - 1].label !== monthLabel) {
-                        months.push({ label: monthLabel, startIndex: index, count: 1 });
-                    } else { months[months.length - 1].count++; }
-                });
-                return months;
-            }, [timelineDates]);
+  const depts = useMemo(() => ['All', ...new Set(activePool.map(t => t.dept || '-'))], [activePool]);
 
-            const todayIndex = useMemo(() => timelineDates.findIndex(d => d.toDateString() === new Date().toDateString()), [timelineDates]);
+  const displayTasks = useMemo(() => {
+    return hierarchyPool.filter(t => {
+      const search = searchQuery.toLowerCase();
+      const matchSearch = t.title.toLowerCase().includes(search) || t.notes.toLowerCase().includes(search);
+      const matchDept = filterDept === 'All' || t.dept === filterDept;
+      
+      let matchStat = true;
+      if (statFilter === 'Done') matchStat = t.status === 'Done';
+      if (statFilter === 'Working') matchStat = (t.status === 'In Progress' || t.status === 'To Do');
 
-            const handleAction = (type, data) => {
-                if (type === 'edit') { setEditingTask(data); setFormData({...data}); setIsModalOpen(true); }
-                if (type === 'delete') { if(confirm('ต้องการลบงานนี้หรือไม่?')) { setTasks(tasks.filter(t => t.id !== data.id)); recordChange(); } }
-                if (type === 'status') { setTasks(tasks.map(t => t.id === data.id ? {...t, status: data.newStatus} : t)); recordChange(); }
-            };
+      return matchSearch && matchDept && matchStat;
+    });
+  }, [hierarchyPool, searchQuery, filterDept, statFilter]);
 
-            const saveForm = (e) => {
-                if (editingTask) setTasks(tasks.map(t => t.id === editingTask.id ? {...formData, id: t.id} : t));
-                else setTasks([...tasks, {...formData, id: Date.now().toString()}]);
-                recordChange();
-                setIsModalOpen(false);
-            };
+  const timelineQueue = useMemo(() => {
+    return hierarchyPool.filter(t => t.status !== 'Done')
+                     .sort((a,b) => {
+                        const dateA = parseDate(a.startDate) || new Date(8640000000000000);
+                        const dateB = parseDate(b.startDate) || new Date(8640000000000000);
+                        return dateA - dateB;
+                     });
+  }, [hierarchyPool]);
 
-            const TaskCard = ({ task }) => (
-                <div onClick={() => handleAction('edit', task)} className="group bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg transition-all cursor-pointer relative overflow-hidden p-4 mb-3">
-                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${task.priority === 'High' ? 'bg-rose-500' : task.priority === 'Medium' ? 'bg-amber-500' : 'bg-indigo-500'}`} />
-                    <div className="flex justify-between items-start mb-2">
-                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${task.priority === 'High' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'}`}>{task.priority}</span>
-                        <div className="flex gap-2">
-                            <span className={`text-[8px] font-black uppercase text-indigo-400`}>{task.parentId ? 'SUB' : 'MAIN'}</span>
-                            <button onClick={(e) => {e.stopPropagation(); handleAction('delete', task)}} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 p-1"><Icon name="trash-2" size={12}/></button>
-                        </div>
-                    </div>
-                    <h4 className="text-sm font-bold text-slate-800 leading-snug mb-1">{cleanText(task.title)}</h4>
-                    <div className="flex justify-between items-center text-[9px] font-bold border-b border-slate-50 pb-2 mb-3">
-                        <span className="text-indigo-500 truncate max-w-[100px]">{task.dept}</span>
-                        <span className="text-slate-300 font-mono">{task.dueDate}</span>
-                    </div>
-                    <div className="flex gap-1.5">
-                        <button onClick={(e) => { e.stopPropagation(); handleAction('status', {id: task.id, newStatus: 'Done'}) }} className={`flex-1 py-1 rounded-lg text-[7px] font-black uppercase transition-all ${task.status === 'Done' ? 'bg-emerald-600 text-white' : 'bg-slate-50 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600'}`}>Finished</button>
-                        <button onClick={(e) => { e.stopPropagation(); handleAction('status', {id: task.id, newStatus: 'In Progress'}) }} className={`flex-1 py-1 rounded-lg text-[7px] font-black uppercase transition-all ${task.status === 'In Progress' || task.status === 'To Do' ? 'bg-amber-500 text-white' : 'bg-slate-50 text-slate-400 hover:bg-amber-50 hover:text-amber-600'}`}>Working</button>
-                        <button onClick={(e) => { e.stopPropagation(); handleAction('status', {id: task.id, newStatus: 'On Hold'}) }} className={`flex-1 py-1 rounded-lg text-[7px] font-black uppercase transition-all ${task.status === 'On Hold' ? 'bg-rose-500 text-white' : 'bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600'}`}>On Hold</button>
-                    </div>
+  const timelineDates = useMemo(() => {
+    if (timelineQueue.length === 0) return [];
+    let min = new Date();
+    let max = new Date();
+    timelineQueue.forEach(t => {
+      const start = parseDate(t.startDate);
+      const end = parseDate(t.dueDate);
+      if (start && start < min) min = new Date(start);
+      if (end && end > max) max = new Date(end);
+    });
+    min.setDate(min.getDate() - 5);
+    max.setDate(max.getDate() + 20);
+    const dates = [];
+    let curr = new Date(min);
+    while (curr <= max) {
+      dates.push(new Date(curr));
+      curr.setDate(curr.getDate() + 1);
+    }
+    return dates;
+  }, [timelineQueue]);
+
+  const timelineMonths = useMemo(() => {
+    if (timelineDates.length === 0) return [];
+    const months = [];
+    timelineDates.forEach((date, index) => {
+      const monthLabel = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      if (months.length === 0 || months[months.length - 1].label !== monthLabel) {
+        months.push({ label: monthLabel, startIndex: index, count: 1 });
+      } else {
+        months[months.length - 1].count++;
+      }
+    });
+    return months;
+  }, [timelineDates]);
+
+  const todayIndex = useMemo(() => {
+    const todayStr = new Date().toDateString();
+    return timelineDates.findIndex(d => d.toDateString() === todayStr);
+  }, [timelineDates]);
+
+  // --- Handlers ---
+  const handleAction = (type, task) => {
+    if (type === 'edit') { setEditingTask(task); setFormData({...task}); setIsModalOpen(true); }
+    if (type === 'delete') { if(confirm('ต้องการลบงานนี้ใช่หรือไม่?')) { setTasks(tasks.filter(t => t.id !== task.id)); recordChange(); } }
+    if (type === 'status') { 
+      setTasks(tasks.map(t => t.id === task.id ? {...t, status: task.newStatus} : t)); 
+      recordChange(); 
+    }
+  };
+
+  const saveForm = (e) => {
+    e.preventDefault();
+    if (editingTask) setTasks(tasks.map(t => t.id === editingTask.id ? {...formData, id: t.id} : t));
+    else setTasks([...tasks, {...formData, id: Date.now().toString()}]);
+    recordChange();
+    setIsModalOpen(false);
+  };
+
+  const TaskCard = ({ task }) => (
+    <div onClick={() => handleAction('edit', task)} className="group bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg transition-all cursor-pointer relative overflow-hidden p-4 mb-3">
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${task.priority === 'High' ? 'bg-rose-500 shadow-md' : task.priority === 'Medium' ? 'bg-amber-500' : 'bg-indigo-500'}`} />
+      <div className="flex justify-between items-start mb-2">
+        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${task.priority === 'High' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'}`}>{task.priority}</span>
+        <div className="flex gap-2">
+          <span className={`text-[8px] font-black uppercase text-indigo-400`}>{task.parentId ? 'SUB' : 'MAIN'}</span>
+          <button onClick={(e) => {e.stopPropagation(); handleAction('delete', task)}} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 p-1 transition-all"><Trash2 size={12}/></button>
+        </div>
+      </div>
+      <h4 className="text-sm font-bold text-slate-800 leading-snug mb-1 group-hover:text-indigo-600 transition-colors">{cleanText(task.title)}</h4>
+      {task.notes && <p className="text-[10px] text-slate-400 line-clamp-1 mb-2 italic">"{task.notes}"</p>}
+      
+      <div className="flex justify-between items-center text-[9px] font-bold border-b border-slate-50 pb-2 mb-3">
+        <span className="text-indigo-500 truncate max-w-[100px]">{task.dept}</span>
+        <span className="text-slate-300 font-mono">{task.dueDate}</span>
+      </div>
+
+      {/* --- Quick Status Change Buttons --- */}
+      <div className="flex gap-1.5">
+        <button 
+          onClick={(e) => { e.stopPropagation(); handleAction('status', {id: task.id, newStatus: 'Done'}) }}
+          className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-lg text-[7px] font-black uppercase transition-all ${task.status === 'Done' ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-50 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600'}`}
+        >
+          <CheckSquare size={10}/> Finished
+        </button>
+        <button 
+          onClick={(e) => { e.stopPropagation(); handleAction('status', {id: task.id, newStatus: 'In Progress'}) }}
+          className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-lg text-[7px] font-black uppercase transition-all ${task.status === 'In Progress' || task.status === 'To Do' ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-50 text-slate-400 hover:bg-amber-50 hover:text-amber-600'}`}
+        >
+          <Activity size={10}/> Working
+        </button>
+        <button 
+          onClick={(e) => { e.stopPropagation(); handleAction('status', {id: task.id, newStatus: 'On Hold'}) }}
+          className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-lg text-[7px] font-black uppercase transition-all ${task.status === 'On Hold' ? 'bg-rose-500 text-white shadow-md' : 'bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600'}`}
+        >
+          <PauseCircle size={10}/> On Hold
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans pb-10">
+      {/* Navbar */}
+      <nav className="bg-white border-b border-slate-200 sticky top-0 z-[100] px-6 py-2 shadow-sm">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-3">
+          <div className="flex items-center gap-3">
+            <div className="bg-slate-900 p-2 rounded-xl text-white shadow-lg"><TrendingUp size={18}/></div>
+            <div>
+              <h1 className="text-sm font-black tracking-tighter text-slate-900 uppercase">Executive Console</h1>
+              <div className="flex items-center gap-1.5 text-[8px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                <History size={10}/> Updated: <span className="text-indigo-600">{lastUpdated}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex bg-slate-100 p-1 rounded-xl shadow-inner">
+             <button onClick={() => setViewMode('Board')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[9px] font-black transition-all ${viewMode === 'Board' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                <LayoutGrid size={12}/> BOARD
+             </button>
+             <button onClick={() => setViewMode('Timeline')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[9px] font-black transition-all ${viewMode === 'Timeline' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                <CalendarRange size={12}/> TIMELINE
+             </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="bg-slate-900 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-indigo-600 cursor-pointer transition-all flex items-center gap-1.5 shadow-sm active:scale-95">
+              <Upload size={12}/> Import CSV <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload}/>
+            </label>
+            <button onClick={() => {setEditingTask(null); setFormData({title:'', dept:'', priority:'Medium', status:'To Do', category:'', notes:'', startDate: '', dueDate: '', parentId: null}); setIsModalOpen(true)}} className="bg-indigo-600 text-white p-1.5 rounded-lg hover:bg-indigo-700 shadow-md transition-all active:scale-95">
+              <Plus size={16} strokeWidth={3}/>
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto px-6 pt-6">
+        {/* Hierarchy Filter - Controls Board, Stats, and Timeline */}
+        <div className="flex justify-center mb-8">
+           <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm flex gap-1">
+              {['All', 'Main', 'Sub'].map(m => (
+                <button key={m} onClick={() => { setHierarchyMode(m); setStatFilter('All'); }} className={`px-10 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${hierarchyMode === m ? 'bg-slate-900 text-white shadow-xl' : 'text-slate-400 hover:text-slate-600'}`}>
+                  {m === 'All' ? 'ALL TASKS' : m === 'Main' ? 'MAIN TASKS' : 'SUB TASKS'}
+                </button>
+              ))}
+           </div>
+        </div>
+
+        {/* Stats */}
+        <section className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12">
+          {[
+            { label: 'ALL TASKS', val: dynamicStats.total, icon: <Briefcase size={22}/>, key: 'All', color: 'bg-indigo-600' },
+            { label: 'FINISHED', val: dynamicStats.finished, icon: <CheckCircle2 size={22}/>, key: 'Done', color: 'bg-emerald-600' },
+            { label: 'WORKING', val: dynamicStats.working, icon: <Clock size={22}/>, key: 'Working', color: 'bg-amber-500' },
+          ].map(s => (
+            <div key={s.key} onClick={() => setStatFilter(statFilter === s.key ? 'All' : s.key)} className={`p-8 rounded-[2.5rem] border transition-all cursor-pointer active:scale-95 flex flex-col justify-between h-36 ${statFilter === s.key ? `${s.color} border-transparent text-white shadow-2xl` : `bg-white border-slate-200 hover:border-indigo-300 shadow-sm`}`}>
+              <div className={`p-3 rounded-2xl w-fit ${statFilter === s.key ? 'bg-white/20' : 'bg-slate-50 text-slate-400'}`}>{s.icon}</div>
+              <div>
+                <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${statFilter === s.key ? 'text-white/80' : 'text-slate-400'}`}>{s.label}</p>
+                <p className="text-3xl font-black leading-none mt-1">{s.val}</p>
+              </div>
+            </div>
+          ))}
+        </section>
+
+        {viewMode === 'Board' ? (
+          <>
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto">
+                <Filter className="text-slate-300 mr-2" size={16}/>
+                {depts.map(d => (
+                  <button key={d} onClick={() => setFilterDept(d)} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all border whitespace-nowrap ${filterDept === d ? 'bg-slate-900 text-white' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}>
+                    {d}
+                  </button>
+                ))}
+              </div>
+              <div className="relative w-full md:w-72">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16}/>
+                <input type="text" placeholder="Search projects..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border-none rounded-2xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none shadow-inner"/>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+              {[
+                { title: 'WORKING', status: 'Working' },
+                { title: 'FINISHED', status: 'Done' }
+              ].map(col => (
+                <div key={col.status} className="flex flex-col">
+                  <div className="flex items-center justify-between mb-6 px-6 bg-slate-900 text-white py-3 rounded-2xl shadow-xl">
+                    <h2 className="font-black uppercase tracking-[0.25em] text-[11px]">{col.title}</h2>
+                    <span className="text-[10px] font-black bg-white/20 px-3 py-1 rounded-full">{
+                      displayTasks.filter(t => col.status === 'Working' ? (t.status === 'In Progress' || t.status === 'To Do') : t.status === 'Done').length
+                    }</span>
+                  </div>
+                  <div className="space-y-1 min-h-[500px]">
+                    {displayTasks
+                      .filter(t => col.status === 'Working' ? (t.status === 'In Progress' || t.status === 'To Do') : t.status === 'Done')
+                      .map(t => <TaskCard key={t.id} task={t}/>)}
+                  </div>
                 </div>
-            );
+              ))}
+            </div>
+          </>
+        ) : (
+          /* --- Timeline View (Gantt Style) --- */
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm mb-20 overflow-hidden flex flex-col max-h-[700px]">
+            <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+               <div>
+                  <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Roadmap Timeline</h2>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 italic">Active Tasks in "{hierarchyMode}" scope</p>
+               </div>
+               <div className="bg-indigo-600 text-white px-4 py-1.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-indigo-100">
+                  {timelineQueue.length} ITEMS IN QUEUE
+               </div>
+            </div>
 
-            return (
-                <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans pb-10">
-                    <nav className="bg-white border-b border-slate-200 sticky top-0 z-[100] px-6 py-2 shadow-sm flex justify-between items-center">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-slate-900 p-2 rounded-xl text-white shadow-lg"><Icon name="trending-up" size={18}/></div>
-                            <div>
-                                <h1 className="text-sm font-black tracking-tighter uppercase leading-none">Executive Console</h1>
-                                <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">Updated: <span className="text-indigo-600">{lastUpdated}</span></p>
-                            </div>
-                        </div>
-                        <div className="flex bg-slate-100 p-1 rounded-xl shadow-inner">
-                            <button onClick={() => setViewMode('Board')} className={`px-4 py-1.5 rounded-lg text-[9px] font-black transition-all ${viewMode === 'Board' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>BOARD</button>
-                            <button onClick={() => setViewMode('Timeline')} className={`px-4 py-1.5 rounded-lg text-[9px] font-black transition-all ${viewMode === 'Timeline' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}>TIMELINE</button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <label className="bg-slate-900 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95 transition-all">
-                                <Icon name="upload" size={12}/> Import <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload}/>
-                            </label>
-                            <button onClick={() => {setEditingTask(null); setIsModalOpen(true)}} className="bg-indigo-600 text-white p-1.5 rounded-lg hover:bg-indigo-700 shadow-md active:scale-95 transition-all">
-                                <Icon name="plus" size={16}/>
-                            </button>
-                        </div>
-                    </nav>
+            <div className="overflow-auto relative no-scrollbar" ref={timelineContainerRef}>
+              {/* Today Vertical Line Indicator */}
+              {todayIndex !== -1 && (
+                <div 
+                  className="absolute top-0 bottom-0 z-10 w-0 border-l-2 border-dashed border-rose-500 pointer-events-none"
+                  style={{ 
+                    left: `calc(250px + ${todayIndex * 42}px + 21px)`,
+                    height: '100%' 
+                  }}
+                />
+              )}
 
-                    <main className="max-w-7xl mx-auto px-6 pt-6">
-                        <div className="flex justify-center mb-8">
-                            <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm flex gap-1">
-                                {['All', 'Main', 'Sub'].map(m => (
-                                    <button key={m} onClick={() => { setHierarchyMode(m); setStatFilter('All'); }} className={`px-10 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${hierarchyMode === m ? 'bg-slate-900 text-white shadow-xl' : 'text-slate-400 hover:text-slate-600'}`}>
-                                        {m === 'All' ? 'ALL TASKS' : m === 'Main' ? 'MAIN TASKS' : 'SUB TASKS'}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+              <table className="w-full border-separate border-spacing-0">
+                <thead className="relative z-[50]">
+                  <tr className="sticky top-0 z-[55]">
+                    <th className="sticky left-0 top-0 bg-slate-100 z-[60] p-4 border-b border-r text-[10px] font-black uppercase text-slate-400 text-left min-w-[250px] shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Period Breakdown</th>
+                    {timelineMonths.map((month, idx) => (
+                      <th key={idx} colSpan={month.count} className="p-2 border-b border-r bg-indigo-50/80 backdrop-blur-md text-[9px] font-black text-indigo-600 uppercase tracking-widest text-center border-t">
+                         {month.label}
+                      </th>
+                    ))}
+                  </tr>
+                  <tr className="sticky top-[38px] z-[55]">
+                    <th className="sticky left-0 bg-white z-[60] p-4 border-b border-r text-[10px] font-black uppercase text-slate-500 text-left min-w-[250px] shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Task Details</th>
+                    {timelineDates.map((date, idx) => {
+                      const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                      const isToday = date.toDateString() === new Date().toDateString();
+                      return (
+                        <th 
+                          key={idx} 
+                          id={isToday ? 'today-marker' : ''}
+                          className={`p-2 border-b border-r min-w-[42px] text-center bg-white ${isWeekend ? 'bg-slate-50/80' : ''} ${isToday ? 'bg-indigo-100/50' : ''}`}
+                        >
+                           <div className={`text-[8px] font-bold ${isToday ? 'text-indigo-600' : 'text-slate-400'} uppercase`}>{date.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                           <div className={`text-[10px] font-black ${isToday ? 'text-indigo-600' : 'text-slate-800'}`}>{date.getDate()}</div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody className="relative">
+                  {timelineQueue.length > 0 ? timelineQueue.map((task) => {
+                    const startDate = parseDate(task.startDate);
+                    const dueDate = parseDate(task.dueDate);
+                    
+                    return (
+                      <tr key={task.id} className="hover:bg-slate-50/50 transition-colors group">
+                        <td onClick={() => handleAction('edit', task)} className="sticky left-0 bg-white z-20 p-4 border-b border-r text-xs font-bold text-slate-700 cursor-pointer shadow-[2px_0_5px_rgba(0,0,0,0.05)] group-hover:bg-slate-50">
+                          <div className="flex items-center gap-2">
+                             <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${task.priority === 'High' ? 'bg-rose-500' : 'bg-indigo-500'}`} />
+                             <span className="truncate max-w-[180px]">{cleanText(task.title)}</span>
+                          </div>
+                          <div className="text-[8px] font-black text-indigo-400 mt-1 uppercase tracking-widest leading-none">{task.dept}</div>
+                        </td>
+                        {timelineDates.map((date, colIdx) => {
+                          const isStart = startDate && date.toDateString() === startDate.toDateString();
+                          const isInRange = startDate && dueDate && date >= startDate && date <= dueDate;
+                          
+                          return (
+                            <td key={colIdx} className={`border-b border-r p-0 relative h-12 ${date.getDay() === 0 || date.getDay() === 6 ? 'bg-slate-50/30' : ''}`}>
+                              {isInRange && (
+                                <div 
+                                  className={`absolute inset-y-3 left-0 right-0 z-0 transition-all ${
+                                    task.status === 'In Progress' ? 'bg-indigo-600 shadow-[0_2px_8px_rgba(79,70,229,0.3)]' : 'bg-slate-200'
+                                  } ${isStart ? 'rounded-l-full' : ''} ${date.toDateString() === dueDate.toDateString() ? 'rounded-r-full' : ''}`}
+                                />
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  }) : (
+                    <tr>
+                      <td colSpan={timelineDates.length + 1} className="p-20 text-center text-slate-300 font-black uppercase tracking-widest">No project data available</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </main>
 
-                        <section className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12">
-                            {[
-                                { label: 'ACTIVE POOL', val: dynamicStats.total, key: 'All', color: 'bg-indigo-600', icon: 'briefcase' },
-                                { label: 'FINISHED', val: dynamicStats.finished, key: 'Done', color: 'bg-emerald-600', icon: 'check-circle-2' },
-                                { label: 'WORKING', val: dynamicStats.working, key: 'Working', color: 'bg-amber-500', icon: 'zap' },
-                            ].map(s => (
-                                <div key={s.key} onClick={() => setStatFilter(statFilter === s.key ? 'All' : s.key)} className={`p-8 rounded-[2.5rem] border transition-all cursor-pointer active:scale-95 flex flex-col justify-between h-36 ${statFilter === s.key ? `${s.color} text-white shadow-2xl scale-[1.02]` : `bg-white border-slate-200 hover:border-indigo-300 shadow-sm`}`}>
-                                    <div className={`p-3 rounded-2xl w-fit ${statFilter === s.key ? 'bg-white/20' : 'bg-slate-50 text-slate-400'}`}>
-                                        <Icon name={s.icon} size={22} />
-                                    </div>
-                                    <div>
-                                        <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${statFilter === s.key ? 'text-white/80' : 'text-slate-400'}`}>{s.label}</p>
-                                        <p className="text-3xl font-black leading-none mt-1">{s.val}</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </section>
+      {/* Task Modal - Updated with Hierarchy Selection */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in duration-200">
+            <div className="px-10 py-8 bg-slate-900 text-white flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-black tracking-tighter uppercase">{editingTask ? 'Review Task' : 'New Entry'}</h2>
+                <p className="text-slate-400 text-[9px] font-black uppercase tracking-[0.4em] mt-1">Management Console v10.0</p>
+              </div>
+              <button onClick={() => setIsModalOpen(false)} className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all"><X size={24} /></button>
+            </div>
+            
+            <form onSubmit={saveForm} className="p-10 space-y-6">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Task Title</label>
+                <input type="text" required className="w-full px-7 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-slate-800 text-md shadow-inner" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})}/>
+              </div>
 
-                        {viewMode === 'Board' ? (
-                            <>
-                                <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
-                                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto">
-                                        <Icon name="filter" size={16} className="text-slate-300 mr-2" />
-                                        {depts.map(d => (
-                                            <button key={d} onClick={() => setFilterDept(d)} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all border whitespace-nowrap ${filterDept === d ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}>
-                                                {d}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div className="relative w-full md:w-72">
-                                        <Icon name="search" size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                                        <input type="text" placeholder="Search projects..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border-none rounded-2xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none shadow-inner"/>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                    {[
-                                        { title: 'WORKING', status: 'Working' },
-                                        { title: 'FINISHED', status: 'Done' }
-                                    ].map(col => (
-                                        <div key={col.status} className="flex flex-col">
-                                            <div className="flex items-center justify-between mb-6 px-6 bg-slate-900 text-white py-3 rounded-2xl shadow-xl">
-                                                <h2 className="font-black uppercase tracking-[0.25em] text-[11px]">{col.title}</h2>
-                                                <span className="text-[10px] font-black bg-white/20 px-3 py-1 rounded-full">{
-                                                    displayTasks.filter(t => col.status === 'Working' ? (t.status === 'In Progress' || t.status === 'To Do') : t.status === 'Done').length
-                                                }</span>
-                                            </div>
-                                            <div className="space-y-1 min-h-[500px]">
-                                                {displayTasks.filter(t => col.status === 'Working' ? (t.status === 'In Progress' || t.status === 'To Do') : t.status === 'Done').map(t => <TaskCard key={t.id} task={t}/>)}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </>
-                        ) : (
-                            <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm mb-20 overflow-hidden flex flex-col max-h-[700px]">
-                                <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between shrink-0">
-                                    <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Roadmap Timeline</h2>
-                                    <div className="bg-indigo-600 text-white px-4 py-1.5 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-indigo-100">{timelineQueue.length} QUEUED</div>
-                                </div>
-                                <div className="overflow-auto relative no-scrollbar" ref={timelineContainerRef}>
-                                    {todayIndex !== -1 && (
-                                        <div className="today-line" style={{ left: `calc(250px + ${todayIndex * 42}px + 21px)` }}>
-                                            <div className="bg-red-500 text-white text-[8px] font-bold px-1 rounded absolute -top-1 left-1 transform -translate-x-1/2">TODAY</div>
-                                        </div>
-                                    )}
-                                    <table className="w-full border-separate border-spacing-0">
-                                        <thead className="relative z-[50]">
-                                            <tr className="sticky top-0 z-[55]">
-                                                <th className="sticky left-0 top-0 bg-slate-100 z-[60] p-4 border-b border-r text-[10px] font-black uppercase text-slate-400 text-left min-w-[250px] shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Month Breakdown</th>
-                                                {timelineMonths.map((month, idx) => (
-                                                    <th key={idx} colSpan={month.count} className="p-2 border-b border-r bg-indigo-50/80 backdrop-blur-md text-[9px] font-black text-indigo-600 uppercase text-center border-t">{month.label}</th>
-                                                ))}
-                                            </tr>
-                                            <tr className="sticky top-[38px] z-[55]">
-                                                <th className="sticky left-0 bg-white z-[60] p-4 border-b border-r text-[10px] font-black uppercase text-slate-500 text-left min-w-[250px] shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Task Details</th>
-                                                {timelineDates.map((date, idx) => {
-                                                    const isToday = date.toDateString() === new Date().toDateString();
-                                                    return (
-                                                        <th key={idx} id={isToday ? 'today-marker' : ''} className={`p-2 border-b border-r min-w-[42px] text-center bg-white ${isToday ? 'bg-indigo-100/50' : ''}`}>
-                                                            <div className={`text-[8px] font-bold ${isToday ? 'text-indigo-600' : 'text-slate-400'} uppercase`}>{date.toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                                                            <div className={`text-[10px] font-black ${isToday ? 'text-red-500' : 'text-slate-800'}`}>{date.getDate()}</div>
-                                                        </th>
-                                                    );
-                                                })}
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {timelineQueue.map((task) => {
-                                                const start = parseDate(task.startDate); const due = parseDate(task.dueDate);
-                                                return (
-                                                    <tr key={task.id} className="hover:bg-slate-50/50 group">
-                                                        <td onClick={() => handleAction('edit', task)} className="sticky left-0 bg-white z-20 p-4 border-b border-r text-xs font-bold text-slate-700 cursor-pointer shadow-[2px_0_5px_rgba(0,0,0,0.05)] group-hover:bg-slate-50">
-                                                            <div className="flex items-center gap-2">
-                                                                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${task.priority === 'High' ? 'bg-rose-500' : 'bg-indigo-500'}`} />
-                                                                <span className="truncate max-w-[180px]">{cleanText(task.title)}</span>
-                                                            </div>
-                                                            <div className="text-[8px] font-black text-indigo-400 mt-1 uppercase leading-none">{task.dept}</div>
-                                                        </td>
-                                                        {timelineDates.map((date, colIdx) => (
-                                                            <td key={colIdx} className="border-b border-r p-0 relative h-12">
-                                                                {start && due && date >= start && date <= due && <div className={`absolute inset-y-3 left-0 right-0 z-0 transition-all ${task.status === 'In Progress' ? 'bg-indigo-600 shadow-lg' : 'bg-slate-200'} ${date.toDateString() === start.toDateString() ? 'rounded-l-full' : ''} ${date.toDateString() === due.toDateString() ? 'rounded-r-full' : ''}`} />}
-                                                            </td>
-                                                        ))}
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        )}
-                    </main>
-
-                    {isModalOpen && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in duration-200">
-                                <div className="px-10 py-8 bg-slate-900 text-white flex justify-between items-center relative overflow-hidden">
-                                    <div className="relative z-10">
-                                        <h2 className="text-2xl font-black tracking-tighter uppercase">{editingTask ? 'Review Record' : 'New Entry'}</h2>
-                                        <p className="text-slate-400 text-[9px] font-black uppercase tracking-[0.4em] mt-1">Management Console v11.0</p>
-                                    </div>
-                                    <button onClick={() => setIsModalOpen(false)} className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all"><Icon name="x" size={24}/></button>
-                                </div>
-                                <form onSubmit={(e) => { e.preventDefault(); saveForm(e); }} className="p-10 space-y-6">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Task Title</label>
-                                        <input type="text" required className="w-full px-7 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-slate-800 text-md shadow-inner" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})}/>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-5">
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Start Date (DD/MM/YYYY)</label>
-                                            <input type="text" className="w-full px-6 py-3.5 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})}/>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Due Date (DD/MM/YYYY)</label>
-                                            <input type="text" className="w-full px-6 py-3.5 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})}/>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Executive Summary</label>
-                                        <textarea className="w-full px-7 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs min-h-[80px] leading-relaxed" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})}/>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-5">
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Status</label>
-                                            <select className="w-full px-4 py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-xs" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-                                                <option value="To Do">To Do</option><option value="In Progress">In Progress</option><option value="Done">Done</option><option value="On Hold">On Hold</option>
-                                            </select>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Hierarchy</label>
-                                            <div className="flex bg-slate-100 p-1 rounded-xl">
-                                                <button type="button" onClick={() => setFormData({...formData, parentId: null})} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase ${!formData.parentId ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Main</button>
-                                                <button type="button" onClick={() => setFormData({...formData, parentId: 'sub-task'})} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase ${formData.parentId ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>Sub</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-5">
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Department</label>
-                                            <input type="text" className="w-full px-4 py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}/>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Priority</label>
-                                            <select className="w-full px-4 py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-xs" value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})}>
-                                                <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="pt-6 flex gap-4">
-                                        <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-4 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-200 transition-all">Discard</button>
-                                        <button type="submit" className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all">Commit Changes</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    )}
+              <div className="grid grid-cols-2 gap-5">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Start Date (DD/MM/YYYY)</label>
+                  <input type="text" className="w-full px-6 py-3.5 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})}/>
                 </div>
-            );
-        };
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Due Date (DD/MM/YYYY)</label>
+                  <input type="text" className="w-full px-6 py-3.5 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})}/>
+                </div>
+              </div>
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Executive Summary</label>
+                <textarea className="w-full px-7 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs min-h-[80px] leading-relaxed" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})}/>
+              </div>
+
+              <div className="grid grid-cols-2 gap-5">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Status</label>
+                  <select className="w-full px-4 py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-xs cursor-pointer" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                    <option value="To Do">To Do</option><option value="In Progress">In Progress</option><option value="Done">Done</option><option value="On Hold">On Hold</option>
+                  </select>
+                </div>
+                {/* --- Hierarchy Selection (Main Task vs Sub Task) --- */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Project Level (Hierarchy)</label>
+                  <div className="flex bg-slate-100 p-1 rounded-xl">
+                    <button 
+                      type="button"
+                      onClick={() => setFormData({...formData, parentId: null})}
+                      className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${!formData.parentId ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+                    >
+                      Main Project
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setFormData({...formData, parentId: 'sub-task'})}
+                      className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${formData.parentId ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+                    >
+                      Sub Task
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-5">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Dept</label>
+                  <input type="text" className="w-full px-4 py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}/>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Priority</label>
+                  <select className="w-full px-4 py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-xs cursor-pointer" value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})}>
+                    <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High Priority</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-6 flex gap-4">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-4 rounded-2xl font-black uppercase text-[10px] hover:bg-slate-200 transition-all">Discard</button>
+                <button type="submit" className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] hover:bg-indigo-700 shadow-xl shadow-indigo-100 transition-all">Update Entry</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;
