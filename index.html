@@ -21,6 +21,8 @@
         .sticky-col { position: sticky; left: 0; background: white; z-index: 20; border-right: 1px solid #e2e8f0; }
         .today-line { width: 2px; border-left: 2px dashed #ef4444; height: 100%; position: absolute; z-index: 10; pointer-events: none; }
         .transition-all { transition: all 0.2s ease-in-out; }
+        input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; }
+        input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
     </style>
 </head>
 <body class="bg-[#f8fafc]">
@@ -28,6 +30,13 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
+
+        const DEPARTMENTS = [
+            "Account", "BC", "WH/LG", "BIT", "Editor-Jamsai", "GBT", "JCC", "People", 
+            "Finance", "B2B Sales & Marketing", "Brand Marketing", "IT", "Online Sales", 
+            "B2C Sales", "Inno", "Creative Design", "Strategic Planning", "Mar Com", 
+            "Digital Marketing", "Editor-M&T", "BD", "Product Design", "Content Acquisition"
+        ];
 
         // Helper for Lucide Icons
         const Icon = ({ name, size = 18, className = "" }) => {
@@ -45,54 +54,58 @@
         };
 
         const App = () => {
-            // --- Persistent Storage ---
             const [tasks, setTasks] = useState(() => {
                 try {
-                    const saved = localStorage.getItem('vibetask_manager_v14_final');
+                    const saved = localStorage.getItem('vibetask_manager_v15_final');
                     return saved ? JSON.parse(saved) : [];
                 } catch (e) { return []; }
             });
 
-            const [lastUpdated, setLastUpdated] = useState(() => localStorage.getItem('vibetask_ts_v14') || 'Ready');
-            const [viewMode, setViewMode] = useState('Board'); 
+            const [lastUpdated, setLastUpdated] = useState(() => localStorage.getItem('vibetask_ts_v15') || 'Ready');
+            const [viewMode, setViewMode] = useState('Board'); // Board, Timeline, Tasks
             const [hierarchyMode, setHierarchyMode] = useState('All'); 
             const [statFilter, setStatFilter] = useState('All');
             const [filterDept, setFilterDept] = useState('All');
             const [searchQuery, setSearchQuery] = useState('');
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [editingTask, setEditingTask] = useState(null);
-            
-            // New state for viewing On Hold tasks specifically
             const [showOnHoldOnly, setShowOnHoldOnly] = useState(false);
 
             const [formData, setFormData] = useState({ 
-                title: '', dept: '', priority: 'Medium', status: 'To Do', category: '', notes: '',
-                startDate: '', dueDate: '', parentId: null
+                title: '', dept: DEPARTMENTS[0], priority: 'Medium', status: 'To Do', category: '', notes: '',
+                startDate: '', dueDate: '', parentId: null, isManualHierarchy: false
             });
 
             const timelineContainerRef = useRef(null);
 
             useEffect(() => {
-                localStorage.setItem('vibetask_manager_v14_final', JSON.stringify(tasks));
+                localStorage.setItem('vibetask_manager_v15_final', JSON.stringify(tasks));
             }, [tasks]);
 
             const recordChange = () => {
                 const now = new Date().toLocaleString('th-TH', { 
-                    day: '2-digit', month: '2-digit', year: 'numeric', 
-                    hour: '2-digit', minute: '2-digit' 
+                    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' 
                 });
                 setLastUpdated(now);
-                localStorage.setItem('vibetask_ts_v14', now);
+                localStorage.setItem('vibetask_ts_v15', now);
             };
 
             const cleanText = (text) => text ? text.replace(/\s*\(.*?\)\s*/g, '').trim() : "";
             
             const parseDate = (str) => {
                 if (!str || str === '-') return null;
-                const parts = str.split('/');
-                if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]);
                 const d = new Date(str);
                 return isNaN(d.getTime()) ? null : d;
+            };
+
+            const handleTitleChange = (val) => {
+                const subKeywords = ['sub', 'ย่อย', 'แตก', '-', '>', 'detail', 'part'];
+                const isLikelySub = subKeywords.some(k => val.toLowerCase().includes(k));
+                setFormData(prev => ({
+                    ...prev,
+                    title: val,
+                    parentId: (!prev.isManualHierarchy) ? (isLikelySub ? 'sub-task' : null) : prev.parentId
+                }));
             };
 
             const parseCSV = (text) => {
@@ -121,11 +134,16 @@
                     if (priorityRaw.includes('low')) priority = 'Low';
                     if (priorityRaw.includes('high')) priority = 'High';
                     const isSub = (name.toLowerCase().includes('sub') || (cols[3] || '').toLowerCase().includes('sub'));
+                    
+                    // Native Date format conversion if needed or just keep as is if csv is YYYY-MM-DD
+                    const rawStart = cols[10]?.trim() || '';
+                    const rawDue = cols[5]?.trim() || '';
+
                     return {
                         id: `task-${idx}-${Date.now()}`,
-                        title: name, category: cols[3]?.trim() || '-', dept: cols[4]?.trim() || '-',
-                        dueDate: cols[5]?.trim() || '-', notes: cols[6]?.trim() || '',
-                        priority, startDate: cols[10]?.trim() || '', status, parentId: isSub ? 'sub-task' : null
+                        title: name, category: cols[3]?.trim() || '-', dept: cols[4]?.trim() || DEPARTMENTS[0],
+                        dueDate: rawDue, notes: cols[6]?.trim() || '',
+                        priority, startDate: rawStart, status, parentId: isSub ? 'sub-task' : null
                     };
                 }).filter(t => t !== null);
             };
@@ -142,8 +160,6 @@
                 reader.readAsText(file);
             };
 
-            // --- Advanced Filtering Logic ---
-            // Data source depends on whether we are looking at Active or On Hold tasks
             const sourcePool = useMemo(() => {
                 return showOnHoldOnly 
                     ? tasks.filter(t => t.status === 'On Hold') 
@@ -162,13 +178,12 @@
                 working: hierarchyPool.filter(t => t.status === 'In Progress' || t.status === 'To Do' || (showOnHoldOnly && t.status === 'On Hold')).length
             }), [hierarchyPool, showOnHoldOnly]);
 
-            const depts = useMemo(() => ['All', ...new Set(sourcePool.map(t => t.dept || '-'))], [sourcePool]);
+            const deptsInUse = useMemo(() => ['All', ...new Set(sourcePool.map(t => t.dept || '-'))], [sourcePool]);
 
             const displayTasks = useMemo(() => hierarchyPool.filter(t => {
                 const search = searchQuery.toLowerCase();
                 const matchSearch = t.title.toLowerCase().includes(search) || t.notes.toLowerCase().includes(search);
                 const matchDept = filterDept === 'All' || t.dept === filterDept;
-                
                 let matchStat = true;
                 if (!showOnHoldOnly) {
                     if (statFilter === 'Done') matchStat = t.status === 'Done';
@@ -208,11 +223,15 @@
 
             const todayIndex = useMemo(() => timelineDates.findIndex(d => d.toDateString() === new Date().toDateString()), [timelineDates]);
 
-            // --- Handlers ---
             const handleAction = (type, data) => {
-                if (type === 'edit') { setEditingTask(data); setFormData({...data}); setIsModalOpen(true); }
+                if (type === 'edit') { 
+                    setEditingTask(data); 
+                    setFormData({...data, isManualHierarchy: true}); 
+                    setIsModalOpen(true); 
+                }
                 if (type === 'delete') { if(confirm('ต้องการลบงานนี้หรือไม่?')) { setTasks(tasks.filter(t => t.id !== data.id)); recordChange(); } }
                 if (type === 'status') { setTasks(tasks.map(t => t.id === data.id ? {...t, status: data.newStatus} : t)); recordChange(); }
+                if (type === 'hierarchy') { setTasks(tasks.map(t => t.id === data.id ? {...t, parentId: data.parentId} : t)); recordChange(); }
             };
 
             const saveForm = (e) => {
@@ -238,14 +257,9 @@
                         <span className="text-indigo-500 truncate max-w-[100px]">{task.dept}</span>
                         <span className="text-slate-300 font-mono">{task.dueDate}</span>
                     </div>
-                    {/* Quick Status Buttons */}
                     <div className="flex gap-1.5 mt-2">
                         {['Done', 'In Progress', 'On Hold'].map(st => (
-                            <button 
-                                key={st} 
-                                onClick={(e) => { e.stopPropagation(); handleAction('status', {id: task.id, newStatus: st}) }} 
-                                className={`flex-1 py-1.5 rounded-lg text-[7px] font-black uppercase transition-all ${task.status === st ? (st==='Done'?'bg-emerald-600 text-white':st==='On Hold'?'bg-rose-500 text-white':'bg-amber-500 text-white') : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
-                            >
+                            <button key={st} onClick={(e) => { e.stopPropagation(); handleAction('status', {id: task.id, newStatus: st}) }} className={`flex-1 py-1.5 rounded-lg text-[7px] font-black uppercase transition-all ${task.status === st ? (st==='Done'?'bg-emerald-600 text-white':st==='On Hold'?'bg-rose-500 text-white':'bg-amber-500 text-white') : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}>
                                 {st === 'In Progress' ? 'Working' : st}
                             </button>
                         ))}
@@ -255,7 +269,6 @@
 
             return (
                 <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans pb-10">
-                    {/* Header Navbar */}
                     <nav className="bg-white border-b border-slate-200 sticky top-0 z-[100] px-6 py-3 shadow-sm flex flex-wrap justify-between items-center gap-4">
                         <div className="flex items-center gap-3">
                             <div className="bg-slate-900 p-2.5 rounded-xl text-white shadow-lg"><Icon name="trending-up" size={20}/></div>
@@ -266,7 +279,7 @@
                         </div>
 
                         <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner">
-                            {['Board', 'Timeline'].map(v => (
+                            {['Board', 'Timeline', 'Tasks'].map(v => (
                                 <button key={v} onClick={() => setViewMode(v)} className={`px-6 py-2 rounded-xl text-[10px] font-black transition-all ${viewMode === v ? 'bg-white text-slate-900 shadow-md transform scale-105' : 'text-slate-400 hover:text-slate-600'}`}>
                                     {v.toUpperCase()}
                                 </button>
@@ -277,50 +290,21 @@
                             <label className="bg-slate-100 text-slate-500 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase cursor-pointer flex items-center gap-2 hover:bg-slate-200 transition-all">
                                 <Icon name="upload" size={14}/> Import CSV <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload}/>
                             </label>
-                            
-                            {/* --- New Prominent Add Task Button --- */}
-                            <button 
-                                onClick={() => {setEditingTask(null); setFormData({title: '', dept: '', priority: 'Medium', status: 'To Do', category: '', notes: '', startDate: '', dueDate: '', parentId: null}); setIsModalOpen(true)}} 
-                                className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-black uppercase text-[11px] flex items-center gap-2 shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 active:translate-y-0 transition-all"
-                            >
-                                <Icon name="plus" size={18} className="stroke-[3px]"/>
+                            <button onClick={() => {setEditingTask(null); setFormData({title: '', dept: DEPARTMENTS[10], priority: 'Medium', status: 'To Do', category: '', notes: '', startDate: '', dueDate: '', parentId: null, isManualHierarchy: false}); setIsModalOpen(true)}} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-[12px] flex items-center gap-2 shadow-xl shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 active:translate-y-0 transition-all border-b-4 border-indigo-800">
+                                <Icon name="plus" size={20} className="stroke-[3px]"/>
                                 <span>Add New Task</span>
                             </button>
                         </div>
                     </nav>
 
                     <main className="max-w-7xl mx-auto px-6 pt-8">
-                        {/* Hierarchy & On-Hold Controls Row */}
                         <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
-                            <div className="invisible hidden md:block w-32"></div> {/* Spacer for balance */}
-                            
-                            {/* Center: Hierarchy Filter */}
+                            <div className="invisible hidden md:block w-32"></div>
                             <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm flex gap-1">
-                                {['All', 'Main', 'Sub'].map(m => (
-                                    <button 
-                                        key={m} 
-                                        onClick={() => { setHierarchyMode(m); setStatFilter('All'); setShowOnHoldOnly(false); }} 
-                                        className={`px-12 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${!showOnHoldOnly && hierarchyMode === m ? 'bg-slate-900 text-white shadow-xl scale-105' : 'text-slate-400 hover:text-slate-500'}`}
-                                    >
-                                        {m} TASKS
-                                    </button>
-                                ))}
+                                {['All', 'Main', 'Sub'].map(m => <button key={m} onClick={() => { setHierarchyMode(m); setStatFilter('All'); setShowOnHoldOnly(false); }} className={`px-12 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${!showOnHoldOnly && hierarchyMode === m ? 'bg-slate-900 text-white shadow-xl scale-105' : 'text-slate-400 hover:text-slate-500'}`}>{m} TASKS</button>)}
                             </div>
-
-                            {/* Right: On Hold Box Filter */}
                             <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm">
-                                <button 
-                                    onClick={() => { setShowOnHoldOnly(!showOnHoldOnly); setStatFilter('All'); }}
-                                    className={`px-8 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${showOnHoldOnly ? 'bg-rose-500 text-white shadow-xl scale-105' : 'text-slate-400 hover:bg-rose-50 hover:text-rose-500'}`}
-                                >
-                                    <Icon name="pause-circle" size={16}/>
-                                    <span>On Hold</span>
-                                    {tasks.filter(t => t.status === 'On Hold').length > 0 && (
-                                        <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[9px] ${showOnHoldOnly ? 'bg-white text-rose-500' : 'bg-rose-100 text-rose-600'}`}>
-                                            {tasks.filter(t => t.status === 'On Hold').length}
-                                        </span>
-                                    )}
-                                </button>
+                                <button onClick={() => { setShowOnHoldOnly(!showOnHoldOnly); setStatFilter('All'); }} className={`px-8 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${showOnHoldOnly ? 'bg-rose-500 text-white shadow-xl scale-105' : 'text-slate-400 hover:bg-rose-50 hover:text-rose-500'}`}><Icon name="pause-circle" size={16}/><span>On Hold</span></button>
                             </div>
                         </div>
 
@@ -340,79 +324,93 @@
 
                         {viewMode === 'Board' ? (
                             <>
-                                {/* Board Filters */}
                                 <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
                                     <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto">
                                         <Icon name="filter" size={16} className="text-slate-300 mr-2" />
-                                        {depts.map(d => <button key={d} onClick={() => setFilterDept(d)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border whitespace-nowrap ${filterDept === d ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}>{d}</button>)}
+                                        {deptsInUse.map(d => <button key={d} onClick={() => setFilterDept(d)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border whitespace-nowrap ${filterDept === d ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}>{d}</button>)}
                                     </div>
-                                    <div className="relative w-full md:w-80">
-                                        <Icon name="search" size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                                        <input type="text" placeholder="Search projects or notes..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none shadow-inner"/>
-                                    </div>
+                                    <div className="relative w-full md:w-80"><Icon name="search" size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none shadow-inner"/></div>
                                 </div>
-                                
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                    {[
-                                        { title: showOnHoldOnly ? 'ON HOLD QUEUE' : 'WORKING', status: 'Working' },
-                                        { title: showOnHoldOnly ? 'READY TO RESUME' : 'FINISHED', status: 'Done' }
-                                    ].map(col => (
+                                    {[ { title: showOnHoldOnly ? 'ON HOLD QUEUE' : 'WORKING', status: 'Working' }, { title: showOnHoldOnly ? 'READY TO RESUME' : 'FINISHED', status: 'Done' } ].map(col => (
                                         <div key={col.status} className="flex flex-col">
-                                            <div className={`flex items-center justify-between mb-6 px-7 py-3.5 rounded-[1.5rem] shadow-xl text-white ${showOnHoldOnly ? 'bg-rose-500' : 'bg-slate-900'}`}>
-                                                <h2 className="font-black uppercase tracking-[0.25em] text-[12px]">{col.title}</h2>
-                                                <span className="text-[10px] font-black bg-white/20 px-3.5 py-1.5 rounded-full">
-                                                    {displayTasks.filter(t => col.status === 'Working' ? (t.status === 'In Progress' || t.status === 'To Do' || t.status === 'On Hold') : t.status === 'Done').length}
-                                                </span>
-                                            </div>
-                                            <div className="space-y-1 min-h-[500px]">
-                                                {displayTasks
-                                                    .filter(t => col.status === 'Working' ? (t.status === 'In Progress' || t.status === 'To Do' || t.status === 'On Hold') : t.status === 'Done')
-                                                    .map(t => <TaskCard key={t.id} task={t}/>)}
-                                                {displayTasks.filter(t => col.status === 'Working' ? (t.status === 'In Progress' || t.status === 'To Do' || t.status === 'On Hold') : t.status === 'Done').length === 0 && (
-                                                    <div className="py-12 border-2 border-dashed border-slate-200 rounded-[2rem] text-center text-slate-300 font-black uppercase text-[10px] tracking-widest">No matching items</div>
-                                                )}
-                                            </div>
+                                            <div className={`flex items-center justify-between mb-6 px-7 py-3.5 rounded-[1.5rem] shadow-xl text-white ${showOnHoldOnly ? 'bg-rose-500' : 'bg-slate-900'}`}><h2 className="font-black uppercase tracking-[0.25em] text-[12px]">{col.title}</h2><span className="text-[10px] font-black bg-white/20 px-3.5 py-1.5 rounded-full">{displayTasks.filter(t => col.status === 'Working' ? (t.status === 'In Progress' || t.status === 'To Do' || t.status === 'On Hold') : t.status === 'Done').length}</span></div>
+                                            <div className="space-y-1 min-h-[500px]">{displayTasks.filter(t => col.status === 'Working' ? (t.status === 'In Progress' || t.status === 'To Do' || t.status === 'On Hold') : t.status === 'Done').map(t => <TaskCard key={t.id} task={t}/>)}</div>
                                         </div>
                                     ))}
                                 </div>
                             </>
-                        ) : (
-                            /* Timeline View */
+                        ) : viewMode === 'Timeline' ? (
                             <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm mb-20 overflow-hidden flex flex-col max-h-[750px]">
                                 <div className="p-7 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-                                    <div>
-                                        <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">{showOnHoldOnly ? 'ON HOLD ROADMAP' : 'ACTIVE TIMELINE'}</h2>
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 italic">{hierarchyMode} Scope - {showOnHoldOnly ? 'Paused Work' : 'In Progress'}</p>
-                                    </div>
+                                    <div><h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">{showOnHoldOnly ? 'ON HOLD ROADMAP' : 'ACTIVE TIMELINE'}</h2><p className="text-[10px] font-bold text-slate-400 uppercase mt-1 italic">{hierarchyMode} Scope</p></div>
                                     <div className={`${showOnHoldOnly ? 'bg-rose-500' : 'bg-indigo-600'} text-white px-5 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg`}>{timelineQueue.length} ITEMS</div>
                                 </div>
                                 <div className="overflow-auto relative no-scrollbar" ref={timelineContainerRef}>
-                                    {todayIndex !== -1 && (
-                                        <div className="today-line" style={{ left: `calc(250px + ${todayIndex * 42}px + 21px)` }}>
-                                            <div className="bg-red-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded absolute -top-1 left-1 transform -translate-x-1/2 shadow-sm">TODAY</div>
-                                        </div>
-                                    )}
+                                    {todayIndex !== -1 && <div className="today-line" style={{ left: `calc(250px + ${todayIndex * 42}px + 21px)` }}><div className="bg-red-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded absolute -top-1 left-1 transform -translate-x-1/2 shadow-sm">TODAY</div></div>}
                                     <table className="w-full border-separate border-spacing-0">
                                         <thead className="relative z-[50]">
-                                            <tr className="sticky top-0 z-[55]">
-                                                <th className="sticky left-0 top-0 bg-slate-100 z-[60] p-4 border-b border-r text-[11px] font-black uppercase text-slate-400 text-left min-w-[250px]">Period</th>
-                                                {timelineMonths.map((m, i) => <th key={i} colSpan={m.count} className="p-2.5 border-b border-r bg-indigo-50/80 backdrop-blur-md text-[10px] font-black text-indigo-600 uppercase text-center border-t border-indigo-100">{m.label}</th>)}
-                                            </tr>
-                                            <tr className="sticky top-[42px] z-[55]">
-                                                <th className="sticky left-0 bg-white z-[60] p-4 border-b border-r text-[11px] font-black uppercase text-slate-500 text-left min-w-[250px]">Deliverable Name</th>
-                                                {timelineDates.map((d, i) => <th key={i} className={`p-2 border-b border-r min-w-[42px] text-center bg-white ${d.toDateString() === new Date().toDateString() ? 'bg-indigo-50/50' : ''}`}><div className="text-[8px] font-bold text-slate-400 uppercase">{d.toLocaleDateString('en-US',{weekday:'short'})}</div><div className={`text-[11px] font-black ${d.toDateString() === new Date().toDateString() ? 'text-red-500' : 'text-slate-800'}`}>{d.getDate()}</div></th>)}
-                                            </tr>
+                                            <tr className="sticky top-0 z-[55]"><th className="sticky left-0 top-0 bg-slate-100 z-[60] p-4 border-b border-r text-[11px] font-black uppercase text-slate-400 text-left min-w-[250px]">Period</th>{timelineMonths.map((m, i) => <th key={i} colSpan={m.count} className="p-2.5 border-b border-r bg-indigo-50/80 backdrop-blur-md text-[10px] font-black text-indigo-600 uppercase text-center border-t border-indigo-100">{m.label}</th>)}</tr>
+                                            <tr className="sticky top-[42px] z-[55]"><th className="sticky left-0 bg-white z-[60] p-4 border-b border-r text-[11px] font-black uppercase text-slate-500 text-left min-w-[250px]">Deliverable Name</th>{timelineDates.map((d, i) => <th key={i} className={`p-2 border-b border-r min-w-[42px] text-center bg-white ${d.toDateString() === new Date().toDateString() ? 'bg-indigo-50/50' : ''}`}><div className="text-[8px] font-bold text-slate-400 uppercase">{d.toLocaleDateString('en-US',{weekday:'short'})}</div><div className={`text-[11px] font-black ${d.toDateString() === new Date().toDateString() ? 'text-red-500' : 'text-slate-800'}`}>{d.getDate()}</div></th>)}</tr>
                                         </thead>
                                         <tbody>
                                             {timelineQueue.map(task => {
                                                 const s = parseDate(task.startDate); const du = parseDate(task.dueDate);
-                                                return (
-                                                    <tr key={task.id} className="hover:bg-slate-50/50 group">
-                                                        <td onClick={() => handleAction('edit', task)} className="sticky left-0 bg-white z-20 p-4 border-b border-r text-xs font-bold text-slate-700 cursor-pointer group-hover:bg-slate-50 shadow-[4px_0_10px_rgba(0,0,0,0.02)]"><div className="flex items-center gap-2.5"><div className={`w-2 h-2 rounded-full shrink-0 ${task.priority === 'High' ? 'bg-rose-500' : 'bg-indigo-500'}`} /><span className="truncate max-w-[180px]">{cleanText(task.title)}</span></div><div className="text-[9px] font-black text-indigo-400 mt-1.5 uppercase tracking-widest leading-none">{task.dept}</div></td>
-                                                        {timelineDates.map((d, i) => <td key={i} className="border-b border-r p-0 relative h-14">{s && du && d >= s && d <= du && <div className={`absolute inset-y-4 left-0 right-0 z-0 transition-all ${task.status === 'In Progress' ? 'bg-indigo-600 shadow-lg' : task.status === 'On Hold' ? 'bg-rose-400' : 'bg-slate-200'} ${d.toDateString() === s.toDateString() ? 'rounded-l-full' : ''} ${d.toDateString() === du.toDateString() ? 'rounded-r-full' : ''}`} />}</td>)}
-                                                    </tr>
-                                                );
+                                                return (<tr key={task.id} className="hover:bg-slate-50/50 group"><td onClick={() => handleAction('edit', task)} className="sticky left-0 bg-white z-20 p-4 border-b border-r text-xs font-bold text-slate-700 cursor-pointer group-hover:bg-slate-50 shadow-[4px_0_10px_rgba(0,0,0,0.02)]"><div className="flex items-center gap-2.5"><div className={`w-2 h-2 rounded-full shrink-0 ${task.priority === 'High' ? 'bg-rose-500' : 'bg-indigo-500'}`} /><span className="truncate max-w-[180px]">{cleanText(task.title)}</span></div><div className="text-[9px] font-black text-indigo-400 mt-1.5 uppercase tracking-widest leading-none">{task.dept}</div></td>{timelineDates.map((d, i) => <td key={i} className="border-b border-r p-0 relative h-14">{s && du && d >= s && d <= du && <div className={`absolute inset-y-4 left-0 right-0 z-0 transition-all ${task.status === 'In Progress' ? 'bg-indigo-600 shadow-lg' : task.status === 'On Hold' ? 'bg-rose-400' : 'bg-slate-200'} ${d.toDateString() === s.toDateString() ? 'rounded-l-full' : ''} ${d.toDateString() === du.toDateString() ? 'rounded-r-full' : ''}`} />}</td>)}</tr>);
                                             })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ) : (
+                            /* --- New "Tasks" View for Quick Input/Update --- */
+                            <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm mb-20 overflow-hidden">
+                                <div className="p-7 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+                                    <div><h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Bulk Data Manager</h2><p className="text-[10px] font-bold text-slate-400 uppercase mt-1 italic">Update Level & Status in one row</p></div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left">
+                                        <thead>
+                                            <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
+                                                <th className="p-6">Task Name & Details</th>
+                                                <th className="p-6 text-center">Hierarchy Level</th>
+                                                <th className="p-6 text-center">Current Status</th>
+                                                <th className="p-6 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-50">
+                                            {displayTasks.map(task => (
+                                                <tr key={task.id} className="hover:bg-slate-50/50 transition-colors group">
+                                                    <td className="p-6">
+                                                        <p className="text-sm font-bold text-slate-800 mb-1">{cleanText(task.title)}</p>
+                                                        <div className="flex gap-4 text-[9px] font-black uppercase text-slate-400 tracking-widest">
+                                                            <span>Dept: <b className="text-indigo-500">{task.dept}</b></span>
+                                                            <span>Due: <b className="text-slate-600">{task.dueDate || '-'}</b></span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-6">
+                                                        <div className="flex bg-slate-100 p-1 rounded-xl w-fit mx-auto shadow-inner">
+                                                            <button onClick={() => handleAction('hierarchy', {id: task.id, parentId: null})} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${!task.parentId ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Main</button>
+                                                            <button onClick={() => handleAction('hierarchy', {id: task.id, parentId: 'sub-task'})} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${task.parentId ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Sub</button>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-6">
+                                                        <div className="flex gap-1.5 justify-center">
+                                                            {['Done', 'In Progress', 'On Hold'].map(st => (
+                                                                <button key={st} onClick={() => handleAction('status', {id: task.id, newStatus: st})} className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all ${task.status === st ? (st==='Done'?'bg-emerald-600 text-white':st==='On Hold'?'bg-rose-500 text-white':'bg-amber-500 text-white') : 'bg-white text-slate-300 border border-slate-100'}`}>
+                                                                    {st === 'In Progress' ? 'Working' : st}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-6 text-right">
+                                                        <div className="flex justify-end gap-2">
+                                                            <button onClick={() => handleAction('edit', task)} className="p-2 hover:bg-indigo-50 text-indigo-400 rounded-lg transition-all"><Icon name="edit-2" size={16}/></button>
+                                                            <button onClick={() => handleAction('delete', task)} className="p-2 hover:bg-rose-50 text-rose-300 hover:text-rose-500 rounded-lg transition-all"><Icon name="trash-2" size={16}/></button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
                                         </tbody>
                                     </table>
                                 </div>
@@ -420,74 +418,63 @@
                         )}
                     </main>
 
-                    {/* Task Modal */}
+                    {/* Task Modal with Enhanced Inputs */}
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[200] flex items-center justify-center p-4">
                             <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in duration-200">
                                 <div className="px-10 py-8 bg-slate-900 text-white flex justify-between items-center relative overflow-hidden">
-                                    <div className="relative z-10">
-                                        <h2 className="text-2xl font-black tracking-tighter uppercase">{editingTask ? 'Edit Task Record' : 'New Entry'}</h2>
-                                        <p className="text-slate-400 text-[9px] font-black uppercase tracking-[0.4em] mt-1">Operational Manager Console v14.0</p>
-                                    </div>
+                                    <div className="relative z-10"><h2 className="text-2xl font-black tracking-tighter uppercase">{editingTask ? 'Edit Entry' : 'Quick New Entry'}</h2><p className="text-slate-400 text-[9px] font-black uppercase tracking-[0.4em] mt-1">Smart Detection Enabled</p></div>
                                     <button onClick={() => setIsModalOpen(false)} className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all"><Icon name="x" size={24}/></button>
                                 </div>
                                 <form onSubmit={saveForm} className="p-10 space-y-7">
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Task Deliverable Name</label>
-                                        <input type="text" required className="w-full px-8 py-4 rounded-3xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-slate-800 text-md shadow-inner transition-all" placeholder="Project Name..." value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})}/>
+                                        <input type="text" required autoFocus className="w-full px-8 py-4 rounded-3xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-slate-800 text-md shadow-inner transition-all" placeholder="Tip: Type 'sub' to auto-detect hierarchy..." value={formData.title} onChange={e => handleTitleChange(e.target.value)}/>
                                     </div>
                                     
                                     <div className="grid grid-cols-2 gap-5">
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Start Date</label>
-                                            <input type="text" className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" placeholder="DD/MM/YYYY" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})}/>
+                                            <input type="date" className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})}/>
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Due Date</label>
-                                            <input type="text" className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" placeholder="DD/MM/YYYY" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})}/>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Executive Notes / Summary</label>
-                                        <textarea className="w-full px-8 py-4 rounded-3xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs min-h-[100px] leading-relaxed transition-all" placeholder="MD summary notes..." value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})}/>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-5">
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Current Status</label>
-                                            <select className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-xs cursor-pointer appearance-none shadow-sm" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-                                                <option value="To Do">To Do</option><option value="In Progress">In Progress</option><option value="Done">Done</option><option value="On Hold">On Hold</option>
-                                            </select>
-                                        </div>
-                                        
-                                        {/* --- New Segmented Control for Hierarchy --- */}
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Project Level</label>
-                                            <div className="flex bg-slate-100 p-1 rounded-2xl">
-                                                <button type="button" onClick={() => setFormData({...formData, parentId: null})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${!formData.parentId ? 'bg-white text-indigo-600 shadow-md transform scale-105' : 'text-slate-400'}`}>Main</button>
-                                                <button type="button" onClick={() => setFormData({...formData, parentId: 'sub-task'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase transition-all ${formData.parentId ? 'bg-white text-indigo-600 shadow-md transform scale-105' : 'text-slate-400'}`}>Sub</button>
-                                            </div>
+                                            <input type="date" className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})}/>
                                         </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-5">
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Department</label>
-                                            <input type="text" className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" placeholder="Analytics, IT..." value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}/>
+                                            <select className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-xs cursor-pointer" value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}>
+                                                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Project Level</label>
+                                            <div className="flex bg-slate-100 p-1.5 rounded-2xl">
+                                                <button type="button" onClick={() => setFormData({...formData, parentId: null, isManualHierarchy: true})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${!formData.parentId ? 'bg-white text-indigo-600 shadow-md transform scale-105' : 'text-slate-400'}`}>Main</button>
+                                                <button type="button" onClick={() => setFormData({...formData, parentId: 'sub-task', isManualHierarchy: true})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${formData.parentId ? 'bg-indigo-600 text-white shadow-md transform scale-105' : 'text-slate-400'}`}>Sub</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-5">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Status</label>
+                                            <select className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-xs cursor-pointer appearance-none shadow-sm" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                                                <option value="To Do">To Do</option><option value="In Progress">In Progress</option><option value="Done">Done</option><option value="On Hold">On Hold</option>
+                                            </select>
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Priority</label>
                                             <select className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-xs cursor-pointer" value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})}>
-                                                <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High Priority</option>
+                                                <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option>
                                             </select>
                                         </div>
                                     </div>
 
-                                    <div className="pt-6 flex gap-4">
-                                        <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-5 rounded-[1.5rem] font-black uppercase text-[11px] hover:bg-slate-200 transition-all">Discard</button>
-                                        <button type="submit" className="flex-[2] bg-indigo-600 text-white py-5 rounded-[1.5rem] font-black uppercase text-[11px] shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Commit Changes</button>
-                                    </div>
+                                    <div className="pt-6 flex gap-4"><button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-5 rounded-[1.5rem] font-black uppercase text-[11px] hover:bg-slate-200">Discard</button><button type="submit" className="flex-[2] bg-indigo-600 text-white py-5 rounded-[1.5rem] font-black uppercase text-[11px] shadow-xl shadow-indigo-100">Save Fast</button></div>
                                 </form>
                             </div>
                         </div>
