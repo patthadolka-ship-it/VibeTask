@@ -33,14 +33,13 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        const DEPARTMENTS = [
-            "Account", "BC", "WH/LG", "BIT", "Editor-Jamsai", "GBT", "JCC", "People", 
+        // Default Departments
+        const INITIAL_DEPARTMENTS = [
+            "Account", "ACD", "BIT", "BCD", "ED", "Planning", "HR", "Strategic Planning", 
             "Finance", "B2B Sales & Marketing", "Brand Marketing", "IT", "Online Sales", 
-            "B2C Sales", "Inno", "Creative Design", "Strategic Planning", "Mar Com", 
-            "Digital Marketing", "Editor-M&T", "BD", "Product Design", "Content Acquisition"
+            "B2C Sales", "Inno", "Creative Design", "Mar Com"
         ];
 
-        // Helper for Lucide Icons
         const Icon = ({ name, size = 18, className = "" }) => {
             const ref = useRef(null);
             useEffect(() => {
@@ -59,12 +58,7 @@
             const [tasks, setTasks] = useState(() => {
                 try {
                     const saved = localStorage.getItem('vibetask_manager_v15_final');
-                    if (saved) return JSON.parse(saved);
-                    return [
-                        { id: '1', title: 'Main Project: Launch Campaign', dept: 'Brand Marketing', priority: 'High', status: 'In Progress', startDate: '2024-03-01', dueDate: '2024-03-25', parentId: null, notes: 'Core project' },
-                        { id: '2', title: 'sub: Design Visual Assets', dept: 'Creative Design', priority: 'Medium', status: 'To Do', startDate: '2024-03-05', dueDate: '2024-03-12', parentId: 'sub-task', notes: 'Waiting for brief' },
-                        { id: '3', title: 'Annual Report 2023', dept: 'Finance', priority: 'High', status: 'Done', startDate: '2024-02-15', dueDate: '2024-03-10', parentId: null, notes: 'Completed on time' }
-                    ];
+                    return saved ? JSON.parse(saved) : [];
                 } catch (e) { return []; }
             });
 
@@ -77,17 +71,16 @@
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [editingTask, setEditingTask] = useState(null);
             const [showOnHoldOnly, setShowOnHoldOnly] = useState(false);
-
-            const [formData, setFormData] = useState({ 
-                title: '', dept: DEPARTMENTS[0], priority: 'Medium', status: 'To Do', category: '', notes: '',
-                startDate: '', dueDate: '', parentId: null, isManualHierarchy: false
-            });
-
-            const timelineContainerRef = useRef(null);
+            const [toast, setToast] = useState(null);
 
             useEffect(() => {
                 localStorage.setItem('vibetask_manager_v15_final', JSON.stringify(tasks));
             }, [tasks]);
+
+            const showToast = (msg) => {
+                setToast(msg);
+                setTimeout(() => setToast(null), 3000);
+            };
 
             const recordChange = () => {
                 const now = new Date().toLocaleString('th-TH', { 
@@ -99,11 +92,34 @@
 
             const cleanText = (text) => text ? text.replace(/\s*\(.*?\)\s*/g, '').trim() : "";
             
+            // Robust Date Parser (Handles DD/MM/YYYY and YYYY-MM-DD)
             const parseDate = (str) => {
                 if (!str || str === '-') return null;
+                if (typeof str !== 'string') return null;
+                
+                if (str.includes('/')) {
+                    const parts = str.split('/');
+                    if (parts.length === 3) {
+                        const [d, m, y] = parts;
+                        // Handle potential DD/MM/YYYY
+                        const date = new Date(`${y}-${m}-${d}`);
+                        return isNaN(date.getTime()) ? null : date;
+                    }
+                }
                 const d = new Date(str);
                 return isNaN(d.getTime()) ? null : d;
             };
+
+            const formatDateForInput = (str) => {
+                const d = parseDate(str);
+                if (!d) return "";
+                return d.toISOString().split('T')[0];
+            };
+
+            const [formData, setFormData] = useState({ 
+                title: '', dept: INITIAL_DEPARTMENTS[0], priority: 'Medium', status: 'To Do', category: '', notes: '',
+                startDate: '', dueDate: '', parentId: null, isManualHierarchy: false
+            });
 
             const handleExportJSON = () => {
                 const dataStr = JSON.stringify(tasks, null, 2);
@@ -115,44 +131,32 @@
                 linkElement.click();
             };
 
-            // Restore Missing Functions
-            const parseCSV = (text) => {
-                const rows = []; let currentRow = []; let currentField = ''; let inQuotes = false;
-                for (let i = 0; i < text.length; i++) {
-                    const char = text[i];
-                    if (char === '"') {
-                        if (inQuotes && text[i + 1] === '"') { currentField += '"'; i++; }
-                        else inQuotes = !inQuotes;
-                    } else if (char === ',' && !inQuotes) { currentRow.push(currentField); currentField = ''; }
-                    else if (char === '\n' && !inQuotes) { currentRow.push(currentField); rows.push(currentRow); currentRow = []; currentField = ''; }
-                    else if (char !== '\r') currentField += char;
-                }
-                if (currentField || currentRow.length > 0) { currentRow.push(currentField); rows.push(currentRow); }
-
-                return rows.slice(1).map((cols, idx) => {
-                    const name = cols[0]?.trim();
-                    if (!name) return null;
-                    const statusRaw = cols[11]?.trim() || '';
-                    let status = 'To Do';
-                    if (statusRaw === 'On Hold') status = 'On Hold';
-                    else if (statusRaw === 'Completed' || statusRaw === 'Done') status = 'Done';
-                    else if (statusRaw === 'In Progress') status = 'In Progress';
-                    const priorityRaw = (cols[8] || '').toLowerCase();
-                    let priority = 'Medium';
-                    if (priorityRaw.includes('low')) priority = 'Low';
-                    if (priorityRaw.includes('high')) priority = 'High';
-                    const isSub = (name.toLowerCase().includes('sub') || (cols[3] || '').toLowerCase().includes('sub'));
-                    
-                    const rawStart = cols[10]?.trim() || '';
-                    const rawDue = cols[5]?.trim() || '';
-
-                    return {
-                        id: `task-${idx}-${Date.now()}`,
-                        title: name, category: cols[3]?.trim() || '-', dept: cols[4]?.trim() || DEPARTMENTS[0],
-                        dueDate: rawDue, notes: cols[6]?.trim() || '',
-                        priority, startDate: rawStart, status, parentId: isSub ? 'sub-task' : null
-                    };
-                }).filter(t => t !== null);
+            const handleJSONImport = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const parsed = JSON.parse(ev.target.result);
+                        if (Array.isArray(parsed)) {
+                            setTasks(parsed);
+                            recordChange();
+                            setStatFilter('All');
+                            // If most tasks are On Hold, switch to that view so user sees the data
+                            const onHoldCount = parsed.filter(t => t.status === 'On Hold').length;
+                            if (onHoldCount > parsed.length / 2) {
+                                setShowOnHoldOnly(true);
+                            }
+                            showToast(`นำเข้าสำเร็จ ${parsed.length} รายการ`);
+                        } else {
+                            alert('รูปแบบไฟล์ JSON ไม่ถูกต้อง');
+                        }
+                    } catch (err) {
+                        alert('ไม่สามารถอ่านไฟล์ได้: ' + err.message);
+                    }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
             };
 
             const handleFileUpload = (e) => {
@@ -160,12 +164,28 @@
                 if (!file) return;
                 const reader = new FileReader();
                 reader.onload = (ev) => {
-                    const parsed = parseCSV(ev.target.result);
+                    // Quick CSV parser (basic)
+                    const text = ev.target.result;
+                    const lines = text.split('\n').filter(l => l.trim());
+                    const parsed = lines.slice(1).map((line, idx) => {
+                        const cols = line.split(',');
+                        return {
+                            id: `csv-${idx}-${Date.now()}`,
+                            title: cols[0] || 'Untitled',
+                            dept: cols[4] || 'Account',
+                            priority: 'Medium',
+                            status: 'To Do',
+                            startDate: cols[10] || '',
+                            dueDate: cols[5] || '',
+                            parentId: null
+                        };
+                    });
                     setTasks(parsed);
                     recordChange();
-                    setStatFilter('All');
+                    showToast(`นำเข้า CSV สำเร็จ ${parsed.length} รายการ`);
                 };
                 reader.readAsText(file);
+                e.target.value = '';
             };
 
             const handleTitleChange = (val) => {
@@ -177,6 +197,13 @@
                     parentId: (!prev.isManualHierarchy) ? (isLikelySub ? 'sub-task' : null) : prev.parentId
                 }));
             };
+
+            // Dynamic Department List based on data
+            const departments = useMemo(() => {
+                const set = new Set(INITIAL_DEPARTMENTS);
+                tasks.forEach(t => { if(t.dept) set.add(t.dept); });
+                return Array.from(set).sort();
+            }, [tasks]);
 
             const sourcePool = useMemo(() => {
                 return showOnHoldOnly 
@@ -190,12 +217,14 @@
                 return true;
             }), [sourcePool, hierarchyMode]);
 
-            // Real-time counters for tabs
-            const tabCounters = useMemo(() => ({
-                All: sourcePool.length,
-                Main: sourcePool.filter(t => !t.parentId).length,
-                Sub: sourcePool.filter(t => !!t.parentId).length
-            }), [sourcePool]);
+            const tabCounters = useMemo(() => {
+                const pool = showOnHoldOnly ? tasks.filter(t => t.status === 'On Hold') : tasks.filter(t => t.status !== 'On Hold');
+                return {
+                    All: pool.length,
+                    Main: pool.filter(t => !t.parentId).length,
+                    Sub: pool.filter(t => !!t.parentId).length
+                }
+            }, [tasks, showOnHoldOnly]);
 
             const dynamicStats = useMemo(() => ({
                 total: hierarchyPool.length,
@@ -203,7 +232,6 @@
                 working: hierarchyPool.filter(t => t.status === 'In Progress' || t.status === 'To Do' || (showOnHoldOnly && t.status === 'On Hold')).length
             }), [hierarchyPool, showOnHoldOnly]);
 
-            // Proportion calculations
             const proportions = useMemo(() => {
                 const total = sourcePool.length || 1;
                 const mainCount = sourcePool.filter(t => !t.parentId).length;
@@ -211,8 +239,7 @@
                 return {
                     mainPct: Math.round((mainCount / total) * 100),
                     subPct: Math.round((subCount / total) * 100),
-                    mainCount,
-                    subCount
+                    mainCount, subCount
                 };
             }, [sourcePool]);
 
@@ -236,17 +263,20 @@
             }, [hierarchyPool, showOnHoldOnly]);
 
             const timelineDates = useMemo(() => {
-                if (timelineQueue.length === 0) {
-                    const d = []; let curr = new Date(); curr.setDate(curr.getDate() - 5);
-                    for(let i=0; i<30; i++) { d.push(new Date(curr)); curr.setDate(curr.getDate()+1); }
-                    return d;
-                };
                 let min = new Date(); let max = new Date();
-                timelineQueue.forEach(t => {
-                    const start = parseDate(t.startDate); const end = parseDate(t.dueDate);
-                    if (start && start < min) min = new Date(start); if (end && end > max) max = new Date(end);
-                });
-                min.setDate(min.getDate() - 5); max.setDate(max.getDate() + 20);
+                max.setDate(max.getDate() + 14);
+                
+                if (timelineQueue.length > 0) {
+                    timelineQueue.forEach(t => {
+                        const start = parseDate(t.startDate); const end = parseDate(t.dueDate);
+                        if (start && start < min) min = new Date(start); 
+                        if (end && end > max) max = new Date(end);
+                    });
+                }
+                
+                min.setDate(min.getDate() - 5); 
+                max.setDate(max.getDate() + 10);
+                
                 const dates = []; let curr = new Date(min);
                 while (curr <= max) { dates.push(new Date(curr)); curr.setDate(curr.getDate() + 1); }
                 return dates;
@@ -266,7 +296,16 @@
             const todayIndex = useMemo(() => timelineDates.findIndex(d => d.toDateString() === new Date().toDateString()), [timelineDates]);
 
             const handleAction = (type, data) => {
-                if (type === 'edit') { setEditingTask(data); setFormData({...data, isManualHierarchy: true}); setIsModalOpen(true); }
+                if (type === 'edit') { 
+                    setEditingTask(data); 
+                    setFormData({
+                        ...data, 
+                        startDate: formatDateForInput(data.startDate),
+                        dueDate: formatDateForInput(data.dueDate),
+                        isManualHierarchy: true
+                    }); 
+                    setIsModalOpen(true); 
+                }
                 if (type === 'delete') { if(window.confirm('ต้องการลบงานนี้หรือไม่?')) { setTasks(tasks.filter(t => t.id !== data.id)); recordChange(); } }
                 if (type === 'status') { setTasks(tasks.map(t => t.id === data.id ? {...t, status: data.newStatus} : t)); recordChange(); }
                 if (type === 'hierarchy') { setTasks(tasks.map(t => t.id === data.id ? {...t, parentId: data.parentId} : t)); recordChange(); }
@@ -280,33 +319,15 @@
                 setIsModalOpen(false);
             };
 
-            const TaskCard = ({ task }) => (
-                <div onClick={() => handleAction('edit', task)} className="group bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg transition-all cursor-pointer relative overflow-hidden p-4 mb-3 animate-fadeIn">
-                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${task.priority === 'High' ? 'bg-rose-500 shadow-md' : task.priority === 'Medium' ? 'bg-amber-500' : 'bg-indigo-500'}`} />
-                    <div className="flex justify-between items-start mb-2">
-                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${task.priority === 'High' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'}`}>{task.priority}</span>
-                        <div className="flex gap-2">
-                            <span className="text-[8px] font-black uppercase text-indigo-400">{task.parentId ? 'SUB' : 'MAIN'}</span>
-                            <button onClick={(e) => {e.stopPropagation(); handleAction('delete', task)}} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 p-1"><Icon name="trash-2" size={12}/></button>
-                        </div>
-                    </div>
-                    <h4 className="text-sm font-bold text-slate-800 leading-snug mb-1">{cleanText(task.title)}</h4>
-                    <div className="flex justify-between items-center text-[9px] font-bold border-b border-slate-50 pb-2 mb-3">
-                        <span className="text-indigo-500 truncate max-w-[100px]">{task.dept}</span>
-                        <span className="text-slate-300 font-mono">{task.dueDate}</span>
-                    </div>
-                    <div className="flex gap-1.5 mt-2">
-                        {['Done', 'In Progress', 'On Hold'].map(st => (
-                            <button key={st} onClick={(e) => { e.stopPropagation(); handleAction('status', {id: task.id, newStatus: st}) }} className={`flex-1 py-1.5 rounded-lg text-[7px] font-black uppercase transition-all ${task.status === st ? (st==='Done'?'bg-emerald-600 text-white':st==='On Hold'?'bg-rose-500 text-white':'bg-amber-500 text-white') : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}>
-                                {st === 'In Progress' ? 'Working' : st}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            );
-
             return (
                 <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans pb-10">
+                    {toast && (
+                        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[300] bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-fadeIn">
+                            <Icon name="check-circle" className="text-emerald-400" />
+                            <span className="text-sm font-bold">{toast}</span>
+                        </div>
+                    )}
+                    
                     <nav className="bg-white border-b border-slate-200 sticky top-0 z-[100] px-6 py-3 shadow-sm flex flex-wrap justify-between items-center gap-4">
                         <div className="flex items-center gap-3">
                             <div className="bg-slate-900 p-2.5 rounded-xl text-white shadow-lg"><Icon name="trending-up" size={20}/></div>
@@ -324,29 +345,30 @@
                             ))}
                         </div>
 
-                        <div className="flex items-center gap-3">
-                            <button onClick={handleExportJSON} className="bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm">
-                                <Icon name="download" size={14}/> Export JSON
-                            </button>
-                            <label className="bg-slate-100 text-slate-500 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase cursor-pointer flex items-center gap-2 hover:bg-slate-200 transition-all">
-                                <Icon name="upload" size={14}/> Import CSV <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload}/>
-                            </label>
-                            <button onClick={() => {setEditingTask(null); setIsModalOpen(true)}} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-[12px] flex items-center gap-2 shadow-xl shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 active:translate-y-0 transition-all border-b-4 border-indigo-800">
-                                <Icon name="plus" size={20} className="stroke-[3px]"/>
-                                <span>Add New Task</span>
+                        <div className="flex items-center gap-2">
+                            <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+                                <label className="text-indigo-600 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase cursor-pointer flex items-center gap-1.5 hover:bg-white hover:shadow-sm transition-all">
+                                    <Icon name="database" size={12}/> Import JSON <input type="file" accept=".json" className="hidden" onChange={handleJSONImport}/>
+                                </label>
+                                <button onClick={handleExportJSON} className="text-slate-600 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase flex items-center gap-1.5 hover:bg-white hover:shadow-sm transition-all">
+                                    <Icon name="download" size={12}/> Export
+                                </button>
+                            </div>
+                            <button onClick={() => {setEditingTask(null); setIsModalOpen(true)}} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black uppercase text-[11px] flex items-center gap-2 shadow-xl shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 transition-all border-b-4 border-indigo-800">
+                                <Icon name="plus" size={16} className="stroke-[3px]"/>
+                                <span>Add Task</span>
                             </button>
                         </div>
                     </nav>
 
                     <main className="max-w-7xl mx-auto px-6 pt-8">
-                        {/* Task Level Tabs with Counters */}
                         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                             <div className="invisible hidden md:block w-32"></div>
                             <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm flex gap-1">
                                 {['All', 'Main', 'Sub'].map(m => (
                                     <button 
                                         key={m} 
-                                        onClick={() => { setHierarchyMode(m); setStatFilter('All'); setShowOnHoldOnly(false); }} 
+                                        onClick={() => { setHierarchyMode(m); setStatFilter('All'); }} 
                                         className={`px-10 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${!showOnHoldOnly && hierarchyMode === m ? 'bg-slate-900 text-white shadow-xl scale-105' : 'text-slate-400 hover:text-slate-500'}`}
                                     >
                                         <span>{m}</span>
@@ -359,16 +381,15 @@
                             <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm">
                                 <button onClick={() => { setShowOnHoldOnly(!showOnHoldOnly); setStatFilter('All'); }} className={`px-8 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${showOnHoldOnly ? 'bg-rose-500 text-white shadow-xl scale-105' : 'text-slate-400 hover:bg-rose-50 hover:text-rose-500'}`}>
                                     <Icon name="pause-circle" size={16}/>
-                                    <span>On Hold</span>
+                                    <span>On Hold ({tasks.filter(t => t.status === 'On Hold').length})</span>
                                 </button>
                             </div>
                         </div>
 
-                        {/* Executive Summary Stats */}
                         <section className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
                             {[
-                                { label: showOnHoldOnly ? 'TOTAL ON HOLD' : 'ALL ACTIVE TASKS', val: dynamicStats.total, key: 'All', color: showOnHoldOnly ? 'bg-rose-600' : 'bg-indigo-600', icon: showOnHoldOnly ? 'pause-circle' : 'briefcase' },
-                                { label: showOnHoldOnly ? 'WAITING' : 'FINISHED', val: dynamicStats.finished, key: 'Done', color: showOnHoldOnly ? 'bg-slate-700' : 'bg-emerald-600', icon: 'check-circle-2' },
+                                { label: showOnHoldOnly ? 'TOTAL ON HOLD' : 'ACTIVE TASKS', val: dynamicStats.total, key: 'All', color: showOnHoldOnly ? 'bg-rose-600' : 'bg-indigo-600', icon: showOnHoldOnly ? 'pause-circle' : 'briefcase' },
+                                { label: showOnHoldOnly ? 'COMPLETED' : 'FINISHED', val: dynamicStats.finished, key: 'Done', color: showOnHoldOnly ? 'bg-slate-700' : 'bg-emerald-600', icon: 'check-circle-2' },
                                 { label: showOnHoldOnly ? 'PENDING' : 'WORKING', val: dynamicStats.working, key: 'Working', color: showOnHoldOnly ? 'bg-slate-500' : 'bg-amber-500', icon: 'zap' },
                             ].map(s => (
                                 <div key={s.key} onClick={() => setStatFilter(statFilter === s.key ? 'All' : s.key)} className={`p-8 rounded-[2.5rem] border flex flex-col justify-between h-40 cursor-pointer transition-all active:scale-95 ${statFilter === s.key ? `${s.color} text-white shadow-2xl scale-[1.02]` : `bg-white border-slate-200 shadow-sm hover:border-indigo-300`}`}>
@@ -378,11 +399,10 @@
                             ))}
                         </section>
 
-                        {/* Proportion Analysis Chart */}
                         <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm mb-10 animate-fadeIn">
                             <div className="flex justify-between items-end mb-4">
                                 <div>
-                                    <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Hierarchy Proportion Analysis</h3>
+                                    <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Hierarchy Proportion</h3>
                                     <p className="text-lg font-black text-slate-800 uppercase">Main Task vs Sub Task Ratio</p>
                                 </div>
                                 <div className="text-right">
@@ -391,85 +411,106 @@
                                     <span className="text-2xl font-black text-slate-400">{proportions.subCount}</span>
                                 </div>
                             </div>
-                            
                             <div className="h-6 w-full bg-slate-100 rounded-full overflow-hidden flex relative">
-                                <div 
-                                    className="h-full bg-indigo-600 transition-all duration-1000 ease-out progress-bar-glow flex items-center justify-center text-[10px] text-white font-black"
-                                    style={{ width: `${proportions.mainPct}%` }}
-                                >
-                                    {proportions.mainPct > 10 && `${proportions.mainPct}%`}
-                                </div>
-                                <div 
-                                    className="h-full bg-slate-300 transition-all duration-1000 ease-out flex items-center justify-center text-[10px] text-slate-600 font-black"
-                                    style={{ width: `${proportions.subPct}%` }}
-                                >
-                                    {proportions.subPct > 10 && `${proportions.subPct}%`}
-                                </div>
-                            </div>
-                            <div className="flex justify-between mt-3 px-1">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 rounded-full bg-indigo-600" />
-                                    <span className="text-[10px] font-black uppercase text-slate-500">Main Projects (Parent)</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[10px] font-black uppercase text-slate-500">Sub Deliverables (Child)</span>
-                                    <div className="w-3 h-3 rounded-full bg-slate-300" />
-                                </div>
+                                <div className="h-full bg-indigo-600 progress-bar-glow flex items-center justify-center text-[10px] text-white font-black" style={{ width: `${proportions.mainPct}%` }}>{proportions.mainPct > 10 && `${proportions.mainPct}%`}</div>
+                                <div className="h-full bg-slate-300 flex items-center justify-center text-[10px] text-slate-600 font-black" style={{ width: `${proportions.subPct}%` }}>{proportions.subPct > 10 && `${proportions.subPct}%`}</div>
                             </div>
                         </section>
 
-                        {viewMode === 'Board' ? (
-                            <>
-                                <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-                                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto">
-                                        <Icon name="filter" size={16} className="text-slate-300 mr-2" />
-                                        {deptsInUse.map(d => <button key={d} onClick={() => setFilterDept(d)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border whitespace-nowrap ${filterDept === d ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}>{d}</button>)}
-                                    </div>
-                                    <div className="relative w-full md:w-80"><Icon name="search" size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="Search tasks..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 border-none rounded-2xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none shadow-inner"/></div>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                    {[ { title: showOnHoldOnly ? 'ON HOLD QUEUE' : 'WORKING', status: 'Working' }, { title: showOnHoldOnly ? 'READY TO RESUME' : 'FINISHED', status: 'Done' } ].map(col => (
-                                        <div key={col.status} className="flex flex-col">
-                                            <div className={`flex items-center justify-between mb-6 px-7 py-3.5 rounded-[1.5rem] shadow-xl text-white ${showOnHoldOnly ? 'bg-rose-500' : 'bg-slate-900'}`}><h2 className="font-black uppercase tracking-[0.25em] text-[12px]">{col.title}</h2><span className="text-[10px] font-black bg-white/20 px-3.5 py-1.5 rounded-full">{displayTasks.filter(t => col.status === 'Working' ? (t.status === 'In Progress' || t.status === 'To Do' || t.status === 'On Hold') : t.status === 'Done').length}</span></div>
-                                            <div className="space-y-1 min-h-[500px]">{displayTasks.filter(t => col.status === 'Working' ? (t.status === 'In Progress' || t.status === 'To Do' || t.status === 'On Hold') : t.status === 'Done').map(t => <TaskCard key={t.id} task={t}/>)}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </>
-                        ) : viewMode === 'Timeline' ? (
-                            <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm mb-20 overflow-hidden flex flex-col max-h-[750px] animate-fadeIn">
-                                <div className="p-7 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-                                    <div><h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">{showOnHoldOnly ? 'ON HOLD ROADMAP' : 'ACTIVE TIMELINE'}</h2><p className="text-[10px] font-bold text-slate-400 uppercase mt-1 italic">{hierarchyMode} Scope</p></div>
-                                    <div className={`${showOnHoldOnly ? 'bg-rose-500' : 'bg-indigo-600'} text-white px-5 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg`}>{timelineQueue.length} ITEMS</div>
-                                </div>
-                                <div className="overflow-auto relative no-scrollbar" ref={timelineContainerRef}>
-                                    {todayIndex !== -1 && <div className="today-line" style={{ left: `calc(250px + ${todayIndex * 42}px + 21px)` }}><div className="bg-red-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded absolute -top-1 left-1 transform -translate-x-1/2 shadow-sm">TODAY</div></div>}
-                                    <table className="w-full border-separate border-spacing-0">
-                                        <thead className="relative z-[50]">
-                                            <tr className="sticky top-0 z-[55]"><th className="sticky left-0 top-0 bg-slate-100 z-[60] p-4 border-b border-r text-[11px] font-black uppercase text-slate-400 text-left min-w-[250px]">Period</th>{timelineMonths.map((m, i) => <th key={i} colSpan={m.count} className="p-2.5 border-b border-r bg-indigo-50/80 backdrop-blur-md text-[10px] font-black text-indigo-600 uppercase text-center border-t border-indigo-100">{m.label}</th>)}</tr>
-                                            <tr className="sticky top-[42px] z-[55]"><th className="sticky left-0 bg-white z-[60] p-4 border-b border-r text-[11px] font-black uppercase text-slate-500 text-left min-w-[250px]">Deliverable Name</th>{timelineDates.map((d, i) => <th key={i} className={`p-2 border-b border-r min-w-[42px] text-center bg-white ${d.toDateString() === new Date().toDateString() ? 'bg-indigo-50/50' : ''}`}><div className="text-[8px] font-bold text-slate-400 uppercase">{d.toLocaleDateString('en-US',{weekday:'short'})}</div><div className={`text-[11px] font-black ${d.toDateString() === new Date().toDateString() ? 'text-red-500' : 'text-slate-800'}`}>{d.getDate()}</div></th>)}</tr>
-                                        </thead>
-                                        <tbody>
-                                            {timelineQueue.map(task => {
-                                                const s = parseDate(task.startDate); const du = parseDate(task.dueDate);
-                                                return (<tr key={task.id} className="hover:bg-slate-50/50 group"><td onClick={() => handleAction('edit', task)} className="sticky left-0 bg-white z-20 p-4 border-b border-r text-xs font-bold text-slate-700 cursor-pointer group-hover:bg-slate-50 shadow-[4px_0_10px_rgba(0,0,0,0.02)]"><div className="flex items-center gap-2.5"><div className={`w-2 h-2 rounded-full shrink-0 ${task.priority === 'High' ? 'bg-rose-500' : 'bg-indigo-500'}`} /><span className="truncate max-w-[180px]">{cleanText(task.title)}</span></div><div className="text-[9px] font-black text-indigo-400 mt-1.5 uppercase tracking-widest leading-none">{task.dept}</div></td>{timelineDates.map((d, i) => <td key={i} className="border-b border-r p-0 relative h-14">{s && du && d >= s && d <= du && <div className={`absolute inset-y-4 left-0 right-0 z-0 transition-all ${task.status === 'In Progress' ? 'bg-indigo-600 shadow-lg' : task.status === 'On Hold' ? 'bg-rose-400' : 'bg-slate-200'} ${d.toDateString() === s.toDateString() ? 'rounded-l-full' : ''} ${d.toDateString() === du.toDateString() ? 'rounded-r-full' : ''}`} />}</td>)}</tr>);
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                        {tasks.length === 0 ? (
+                            <div className="bg-white p-20 rounded-[3rem] border border-dashed border-slate-300 text-center animate-fadeIn">
+                                <div className="bg-slate-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300"><Icon name="database" size={40}/></div>
+                                <h3 className="text-xl font-black text-slate-800 uppercase mb-2">No Data Available</h3>
+                                <p className="text-slate-400 text-sm mb-8">กรุณานำเข้าไฟล์ JSON หรือเพิ่มงานใหม่เพื่อเริ่มต้นใช้งาน</p>
                             </div>
                         ) : (
-                            <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm mb-20 overflow-hidden animate-fadeIn">
-                                <div className="p-7 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-                                    <div><h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">Bulk Data Manager</h2><p className="text-[10px] font-bold text-slate-400 uppercase mt-1 italic">Update Level & Status in one row</p></div>
+                            viewMode === 'Board' ? (
+                                <>
+                                    <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
+                                        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto">
+                                            <Icon name="filter" size={16} className="text-slate-300 mr-2" />
+                                            {deptsInUse.map(d => <button key={d} onClick={() => setFilterDept(d)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border whitespace-nowrap ${filterDept === d ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}>{d}</button>)}
+                                        </div>
+                                        <div className="relative w-full md:w-80"><Icon name="search" size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="ค้นหางาน..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 border-none rounded-2xl text-sm font-bold outline-none shadow-inner"/></div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                                        {[ 
+                                            { title: showOnHoldOnly ? 'ON HOLD QUEUE' : 'WORKING', status: 'Working' }, 
+                                            { title: showOnHoldOnly ? 'READY TO RESUME' : 'COMPLETED', status: 'Done' } 
+                                        ].map(col => {
+                                            const filtered = displayTasks.filter(t => col.status === 'Working' ? (t.status !== 'Done') : t.status === 'Done');
+                                            return (
+                                                <div key={col.status} className="flex flex-col animate-fadeIn">
+                                                    <div className={`flex items-center justify-between mb-6 px-7 py-3.5 rounded-[1.5rem] shadow-xl text-white ${showOnHoldOnly ? 'bg-rose-500' : 'bg-slate-900'}`}>
+                                                        <h2 className="font-black uppercase tracking-[0.25em] text-[12px]">{col.title}</h2>
+                                                        <span className="text-[10px] font-black bg-white/20 px-3.5 py-1.5 rounded-full">{filtered.length}</span>
+                                                    </div>
+                                                    <div className="space-y-4">
+                                                        {filtered.map(t => (
+                                                            <div key={t.id} onClick={() => handleAction('edit', t)} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-lg transition-all cursor-pointer relative overflow-hidden group">
+                                                                <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${t.priority === 'High' ? 'bg-rose-500' : t.priority === 'Medium' ? 'bg-amber-500' : 'bg-indigo-500'}`} />
+                                                                <div className="flex justify-between items-start mb-2">
+                                                                    <span className="text-[8px] font-black uppercase text-indigo-400">{t.parentId ? 'SUB' : 'MAIN'}</span>
+                                                                    <button onClick={(e) => {e.stopPropagation(); handleAction('delete', t)}} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 p-1 transition-all"><Icon name="trash-2" size={14}/></button>
+                                                                </div>
+                                                                <h4 className="text-sm font-bold text-slate-800 leading-snug mb-2">{t.title}</h4>
+                                                                {t.notes && <p className="text-[10px] text-slate-400 line-clamp-2 mb-3 leading-relaxed">{t.notes}</p>}
+                                                                <div className="flex justify-between items-center text-[9px] font-bold mt-2 pt-3 border-t border-slate-50">
+                                                                    <span className="text-indigo-500">{t.dept}</span>
+                                                                    <span className="text-slate-300">{t.dueDate || '-'}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                        {filtered.length === 0 && <div className="py-10 text-center text-slate-300 text-xs font-black uppercase tracking-widest">No Items</div>}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            ) : viewMode === 'Timeline' ? (
+                                <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm mb-20 overflow-hidden flex flex-col max-h-[750px] animate-fadeIn">
+                                    <div className="p-7 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+                                        <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase">{showOnHoldOnly ? 'ON HOLD ROADMAP' : 'ACTIVE TIMELINE'}</h2>
+                                    </div>
+                                    <div className="overflow-auto relative no-scrollbar" ref={timelineContainerRef}>
+                                        <table className="w-full border-separate border-spacing-0">
+                                            <thead>
+                                                <tr className="sticky top-0 z-[55]">
+                                                    <th className="sticky left-0 bg-slate-100 p-4 border-b border-r text-[11px] font-black uppercase text-slate-400 text-left min-w-[250px] z-[60]">Task Name</th>
+                                                    {timelineMonths.map((m, i) => <th key={i} colSpan={m.count} className="p-2.5 border-b border-r bg-indigo-50/80 backdrop-blur-md text-[10px] font-black text-indigo-600 uppercase text-center">{m.label}</th>)}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {timelineQueue.map(task => {
+                                                    const s = parseDate(task.startDate); const du = parseDate(task.dueDate);
+                                                    return (
+                                                        <tr key={task.id} className="hover:bg-slate-50/50 group">
+                                                            <td onClick={() => handleAction('edit', task)} className="sticky left-0 bg-white z-20 p-4 border-b border-r text-xs font-bold text-slate-700 cursor-pointer group-hover:bg-slate-50 shadow-[4px_0_10px_rgba(0,0,0,0.02)]">
+                                                                <div className="flex items-center gap-2.5">
+                                                                    <div className={`w-2 h-2 rounded-full shrink-0 ${task.priority === 'High' ? 'bg-rose-500' : 'bg-indigo-500'}`} />
+                                                                    <span className="truncate max-w-[180px]">{task.title}</span>
+                                                                </div>
+                                                                <div className="text-[9px] font-black text-indigo-400 mt-1 uppercase">{task.dept}</div>
+                                                            </td>
+                                                            {timelineDates.map((d, i) => <td key={i} className="border-b border-r p-0 relative h-14">
+                                                                {s && du && d >= s && d <= du && <div className={`absolute inset-y-4 left-0 right-0 z-0 ${task.status === 'In Progress' ? 'bg-indigo-600' : task.status === 'Done' ? 'bg-emerald-500' : 'bg-rose-400'} ${d.toDateString() === s.toDateString() ? 'rounded-l-full' : ''} ${d.toDateString() === du.toDateString() ? 'rounded-r-full' : ''}`} />}
+                                                            </td>)}
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
-                                <div className="overflow-x-auto">
+                            ) : (
+                                <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm mb-20 overflow-hidden animate-fadeIn">
                                     <table className="w-full text-left">
                                         <thead>
-                                            <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
+                                            <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b bg-slate-50">
                                                 <th className="p-6">Task Name & Details</th>
-                                                <th className="p-6 text-center">Hierarchy Level</th>
-                                                <th className="p-6 text-center">Current Status</th>
+                                                <th className="p-6 text-center">Hierarchy</th>
+                                                <th className="p-6 text-center">Status</th>
                                                 <th className="p-6 text-right">Actions</th>
                                             </tr>
                                         </thead>
@@ -477,23 +518,22 @@
                                             {displayTasks.map(task => (
                                                 <tr key={task.id} className="hover:bg-slate-50/50 transition-colors group">
                                                     <td className="p-6">
-                                                        <p className="text-sm font-bold text-slate-800 mb-1">{cleanText(task.title)}</p>
+                                                        <p className="text-sm font-bold text-slate-800 mb-1">{task.title}</p>
                                                         <div className="flex gap-4 text-[9px] font-black uppercase text-slate-400 tracking-widest">
                                                             <span>Dept: <b className="text-indigo-500">{task.dept}</b></span>
                                                             <span>Due: <b className="text-slate-600">{task.dueDate || '-'}</b></span>
                                                         </div>
                                                     </td>
-                                                    <td className="p-6">
-                                                        <div className="flex bg-slate-100 p-1 rounded-xl w-fit mx-auto shadow-inner">
-                                                            <button onClick={() => handleAction('hierarchy', {id: task.id, parentId: null})} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${!task.parentId ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Main</button>
-                                                            <button onClick={() => handleAction('hierarchy', {id: task.id, parentId: 'sub-task'})} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${task.parentId ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>Sub</button>
-                                                        </div>
+                                                    <td className="p-6 text-center">
+                                                        <button onClick={() => handleAction('hierarchy', {id: task.id, parentId: task.parentId ? null : 'sub-task'})} className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase ${!task.parentId ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                            {!task.parentId ? 'Main' : 'Sub'}
+                                                        </button>
                                                     </td>
                                                     <td className="p-6">
                                                         <div className="flex gap-1.5 justify-center">
                                                             {['Done', 'In Progress', 'On Hold'].map(st => (
                                                                 <button key={st} onClick={() => handleAction('status', {id: task.id, newStatus: st})} className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all ${task.status === st ? (st==='Done'?'bg-emerald-600 text-white':st==='On Hold'?'bg-rose-500 text-white':'bg-amber-500 text-white') : 'bg-white text-slate-300 border border-slate-100'}`}>
-                                                                    {st === 'In Progress' ? 'Working' : st}
+                                                                    {st}
                                                                 </button>
                                                             ))}
                                                         </div>
@@ -509,66 +549,51 @@
                                         </tbody>
                                     </table>
                                 </div>
-                            </div>
+                            )
                         )}
                     </main>
 
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[200] flex items-center justify-center p-4">
                             <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in duration-200">
-                                <div className="px-10 py-8 bg-slate-900 text-white flex justify-between items-center relative overflow-hidden">
-                                    <div className="relative z-10"><h2 className="text-2xl font-black tracking-tighter uppercase">{editingTask ? 'Edit Entry' : 'Quick New Entry'}</h2><p className="text-slate-400 text-[9px] font-black uppercase tracking-[0.4em] mt-1">Smart Detection Enabled</p></div>
+                                <div className="px-10 py-8 bg-slate-900 text-white flex justify-between items-center">
+                                    <h2 className="text-2xl font-black tracking-tighter uppercase">{editingTask ? 'Edit Task' : 'Add New Task'}</h2>
                                     <button onClick={() => setIsModalOpen(false)} className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all"><Icon name="x" size={24}/></button>
                                 </div>
                                 <form onSubmit={saveForm} className="p-10 space-y-7">
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Task Deliverable Name</label>
-                                        <input type="text" required autoFocus className="w-full px-8 py-4 rounded-3xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-slate-800 text-md shadow-inner transition-all" placeholder="Tip: Type 'sub' to auto-detect hierarchy..." value={formData.title} onChange={e => handleTitleChange(e.target.value)}/>
+                                        <input type="text" required autoFocus className="w-full px-8 py-4 rounded-3xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-slate-800 text-md shadow-inner transition-all" value={formData.title} onChange={e => handleTitleChange(e.target.value)}/>
                                     </div>
-                                    
                                     <div className="grid grid-cols-2 gap-5">
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Start Date</label>
-                                            <input type="date" className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})}/>
+                                            <input type="date" className="w-full px-6 py-4 rounded-2xl bg-slate-50 outline-none font-bold text-xs" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})}/>
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Due Date</label>
-                                            <input type="date" className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-xs" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})}/>
+                                            <input type="date" className="w-full px-6 py-4 rounded-2xl bg-slate-50 outline-none font-bold text-xs" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})}/>
                                         </div>
                                     </div>
-
                                     <div className="grid grid-cols-2 gap-5">
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Department</label>
-                                            <select className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-xs cursor-pointer" value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}>
-                                                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                                            <select className="w-full px-6 py-4 rounded-2xl bg-slate-50 outline-none font-black text-xs" value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}>
+                                                {departments.map(d => <option key={d} value={d}>{d}</option>)}
                                             </select>
                                         </div>
                                         <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Project Level</label>
+                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Hierarchy</label>
                                             <div className="flex bg-slate-100 p-1.5 rounded-2xl">
-                                                <button type="button" onClick={() => setFormData({...formData, parentId: null, isManualHierarchy: true})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${!formData.parentId ? 'bg-white text-indigo-600 shadow-md transform scale-105' : 'text-slate-400'}`}>Main</button>
-                                                <button type="button" onClick={() => setFormData({...formData, parentId: 'sub-task', isManualHierarchy: true})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${formData.parentId ? 'bg-indigo-600 text-white shadow-md transform scale-105' : 'text-slate-400'}`}>Sub</button>
+                                                <button type="button" onClick={() => setFormData({...formData, parentId: null, isManualHierarchy: true})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all ${!formData.parentId ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400'}`}>Main</button>
+                                                <button type="button" onClick={() => setFormData({...formData, parentId: 'sub-task', isManualHierarchy: true})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black transition-all ${formData.parentId ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>Sub</button>
                                             </div>
                                         </div>
                                     </div>
-
-                                    <div className="grid grid-cols-2 gap-5">
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Status</label>
-                                            <select className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-xs cursor-pointer appearance-none shadow-sm" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-                                                <option value="To Do">To Do</option><option value="In Progress">In Progress</option><option value="Done">Done</option><option value="On Hold">On Hold</option>
-                                            </select>
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-3">Priority</label>
-                                            <select className="w-full px-6 py-4 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-xs cursor-pointer" value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})}>
-                                                <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option>
-                                            </select>
-                                        </div>
+                                    <div className="pt-6 flex gap-4">
+                                        <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-5 rounded-[1.5rem] font-black uppercase text-[11px]">Discard</button>
+                                        <button type="submit" className="flex-[2] bg-indigo-600 text-white py-5 rounded-[1.5rem] font-black uppercase text-[11px] shadow-xl shadow-indigo-100">Save Task</button>
                                     </div>
-
-                                    <div className="pt-6 flex gap-4"><button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-slate-100 text-slate-400 py-5 rounded-[1.5rem] font-black uppercase text-[11px] hover:bg-slate-200">Discard</button><button type="submit" className="flex-[2] bg-indigo-600 text-white py-5 rounded-[1.5rem] font-black uppercase text-[11px] shadow-xl shadow-indigo-100">Save Fast</button></div>
                                 </form>
                             </div>
                         </div>
