@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Executive Manager Dashboard - Ultra Timeline</title>
+    <title>VibeTask Pro | Executive Management Console</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & ReactDOM -->
@@ -20,15 +20,6 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         
-        .timeline-grid {
-            background-size: 40px 100%;
-            background-image: linear-gradient(to right, #f1f5f9 1px, transparent 1px);
-        }
-
-        .task-bar-transition {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
         .glass-header {
             background: rgba(255, 255, 255, 0.85);
             backdrop-filter: blur(12px);
@@ -45,27 +36,17 @@
             box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
         }
 
-        .weekend-col {
-            background: rgba(248, 250, 252, 0.5);
-        }
-
-        @keyframes pulse-soft {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        .animate-pulse-soft { animation: pulse-soft 3s infinite; }
+        .transition-all { transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+        .tab-counter { font-size: 0.7rem; padding: 2px 8px; border-radius: 8px; margin-left: 8px; font-weight: 900; }
         
-        .btn-action {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
+        input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; }
+        input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
 
-        .btn-delete { background-color: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
-        .btn-delete:hover { background-color: #dc2626; color: white; }
-        .btn-edit { background-color: #e0e7ff; color: #4f46e5; border: 1px solid #c7d2fe; }
-        .btn-edit:hover { background-color: #4f46e5; color: white; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
     </style>
 </head>
 <body class="bg-[#f1f5f9] text-slate-900">
@@ -74,10 +55,23 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        const INITIAL_DEPARTMENTS = [
-            "Account", "ACD", "BIT", "BCD", "ED", "Planning", "HR", "Strategic Planning", 
+        const DEPARTMENTS = [
+            "Account", "BC", "WH/LG", "BIT", "Editor-Jamsai", "GBT", "JCC", "People", 
             "Finance", "B2B Sales & Marketing", "Brand Marketing", "IT", "Online Sales", 
-            "B2C Sales", "Inno", "Creative Design", "Mar Com"
+            "B2C Sales", "Inno", "Creative Design", "Strategic Planning", "Mar Com", 
+            "Digital Marketing", "Editor-M&T", "BD", "Product Design", "Content Acquisition"
+        ];
+
+        const STORAGE_KEY = 'vibetask_master_v31_pro';
+
+        const INITIAL_SEED = [
+            { id: "s1", title: "ACD", status: "On Hold", priority: "Low", dept: "BC", startDate: "2025-12-08", dueDate: "2025-12-10", notes: "", parentId: null },
+            { id: "s2", title: "BIT", status: "On Hold", priority: "Low", dept: "BIT", startDate: "2025-12-08", dueDate: "2025-12-10", notes: "", parentId: null },
+            { id: "s3", title: "BCD", status: "Done", priority: "Medium", dept: "B2C Sales", startDate: "2025-12-08", dueDate: "2025-12-08", notes: "", parentId: null },
+            { id: "s4", title: "ED Non Fiction", status: "Done", priority: "Medium", dept: "Editor-Jamsai", startDate: "2025-12-08", dueDate: "2025-12-08", notes: "", parentId: null },
+            { id: "s5", title: "CliftonStrengths All 34", status: "Done", priority: "High", dept: "Strategic Planning", startDate: "2025-12-04", dueDate: "2025-12-09", notes: "", parentId: null },
+            { id: "s6", title: "วิเคราะห์", status: "In Progress", priority: "High", dept: "Strategic Planning", startDate: "2025-12-04", dueDate: "2025-12-16", notes: "พี่อยากทำ dashboard เพื่อวัดผล", parentId: null },
+            { id: "s7", title: "สรุป ED fiction จากการประชุม", status: "Done", priority: "Medium", dept: "Editor-Jamsai", startDate: "2025-12-08", dueDate: "2025-12-08", notes: "", parentId: "sub-task" }
         ];
 
         const Icon = ({ name, size = 18, className = "" }) => {
@@ -94,12 +88,15 @@
         const App = () => {
             const [tasks, setTasks] = useState(() => {
                 try {
-                    const saved = localStorage.getItem('vibetask_manager_v15_final');
-                    return saved ? JSON.parse(saved) : [];
-                } catch (e) { return []; }
+                    const saved = localStorage.getItem(STORAGE_KEY);
+                    if (saved) return JSON.parse(saved);
+                    const legacy = localStorage.getItem('vibetask_manager_v15_final');
+                    if (legacy) return JSON.parse(legacy);
+                    return INITIAL_SEED;
+                } catch (e) { return INITIAL_SEED; }
             });
 
-            const [lastUpdated, setLastUpdated] = useState(() => localStorage.getItem('vibetask_ts_v15') || 'Ready');
+            const [lastUpdated, setLastUpdated] = useState(() => localStorage.getItem('vibetask_ts_v31') || 'Ready');
             const [viewMode, setViewMode] = useState('Board'); 
             const [hierarchyMode, setHierarchyMode] = useState('All'); 
             const [statFilter, setStatFilter] = useState('All');
@@ -107,14 +104,13 @@
             const [searchQuery, setSearchQuery] = useState('');
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [editingTask, setEditingTask] = useState(null);
-            const [deleteConfirmTask, setDeleteConfirmTask] = useState(null);
             const [showOnHoldOnly, setShowOnHoldOnly] = useState(false);
             const [toast, setToast] = useState(null);
 
             const timelineContainerRef = useRef(null);
 
             useEffect(() => {
-                localStorage.setItem('vibetask_manager_v15_final', JSON.stringify(tasks));
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
             }, [tasks]);
 
             const showToast = (msg) => {
@@ -127,9 +123,11 @@
                     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' 
                 });
                 setLastUpdated(now);
-                localStorage.setItem('vibetask_ts_v15', now);
+                localStorage.setItem('vibetask_ts_v31', now);
             };
 
+            const cleanText = (text) => text ? text.replace(/\s*\(.*?\)\s*/g, '').trim() : "";
+            
             const parseDate = (str) => {
                 if (!str || str === '-') return null;
                 const s = str.toString().trim();
@@ -137,8 +135,7 @@
                     const parts = s.split('/');
                     if (parts.length === 3) {
                         const [d, m, y] = parts;
-                        const date = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
-                        return isNaN(date.getTime()) ? null : date;
+                        return new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
                     }
                 }
                 const d = new Date(s);
@@ -148,20 +145,82 @@
             const formatDateForInput = (str) => {
                 const d = parseDate(str);
                 if (!d) return "";
-                const year = d.getFullYear();
-                const month = String(d.getMonth() + 1).padStart(2, '0');
-                const day = String(d.getDate()).padStart(2, '0');
-                return `${year}-${month}-${day}`;
+                return d.toISOString().split('T')[0];
+            };
+
+            // --- DATA HANDLERS ---
+            const parseCSV = (text) => {
+                const rows = []; let currentRow = []; let currentField = ''; let inQuotes = false;
+                for (let i = 0; i < text.length; i++) {
+                    const char = text[i];
+                    if (char === '"') {
+                        if (inQuotes && text[i + 1] === '"') { currentField += '"'; i++; }
+                        else inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) { currentRow.push(currentField); currentField = ''; }
+                    else if (char === '\n' && !inQuotes) { currentRow.push(currentField); rows.push(currentRow); currentRow = []; currentField = ''; }
+                    else if (char !== '\r') currentField += char;
+                }
+                if (currentField || currentRow.length > 0) { currentRow.push(currentField); rows.push(currentRow); }
+
+                return rows.slice(1).map((cols, idx) => {
+                    const name = cols[0]?.trim();
+                    if (!name) return null;
+                    
+                    const statusRaw = cols[11]?.trim() || '';
+                    let status = 'To Do';
+                    if (statusRaw.includes('Hold')) status = 'On Hold';
+                    else if (statusRaw.includes('Complete') || statusRaw === 'Done') status = 'Done';
+                    else if (statusRaw.includes('Progress')) status = 'In Progress';
+                    
+                    const priorityRaw = (cols[8] || '').toLowerCase();
+                    const isSub = name.toLowerCase().includes('sub') || name.includes('ย่อย') || (cols[3] || '').toLowerCase().includes('sub');
+                    
+                    const convertDate = (str) => {
+                        if (!str || str === '-') return '';
+                        const parts = str.split('/');
+                        if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                        return str;
+                    };
+
+                    return {
+                        id: `task-${idx}-${Date.now()}`,
+                        title: name,
+                        dept: cols[4]?.trim() || DEPARTMENTS[0],
+                        dueDate: convertDate(cols[5]?.trim()),
+                        startDate: convertDate(cols[10]?.trim()),
+                        notes: cols[6]?.trim() || '',
+                        status, 
+                        priority: priorityRaw.includes('high') ? 'High' : priorityRaw.includes('low') ? 'Low' : 'Medium',
+                        parentId: isSub ? 'sub-task' : null
+                    };
+                }).filter(t => t !== null);
+            };
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    try {
+                        const data = parseCSV(ev.target.result);
+                        if (data.length > 0) {
+                            if(confirm(`ตรวจพบข้อมูล ${data.length} รายการ ต้องการนำเข้าและเขียนทับข้อมูลเดิมหรือไม่?`)) {
+                                setTasks(data); recordChange(); showToast(`นำเข้าสำเร็จ ${data.length} รายการ`);
+                            }
+                        }
+                    } catch (err) { alert("เกิดข้อผิดพลาดในการประมวลผลไฟล์ CSV"); }
+                };
+                reader.readAsText(file);
+                e.target.value = '';
             };
 
             const handleExportJSON = () => {
                 const dataStr = JSON.stringify(tasks, null, 2);
                 const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-                const exportFileDefaultName = `tasks_backup_${new Date().toISOString().split('T')[0]}.json`;
-                const linkElement = document.createElement('a');
-                linkElement.setAttribute('href', dataUri);
-                linkElement.setAttribute('download', exportFileDefaultName);
-                linkElement.click();
+                const link = document.createElement('a');
+                link.setAttribute('href', dataUri);
+                link.setAttribute('download', `vibetask_backup_${new Date().toISOString().split('T')[0]}.json`);
+                link.click();
             };
 
             const handleJSONImport = (e) => {
@@ -172,12 +231,7 @@
                     try {
                         const parsed = JSON.parse(ev.target.result);
                         if (Array.isArray(parsed)) {
-                            setTasks(parsed);
-                            setStatFilter('All');
-                            const onHoldCount = parsed.filter(t => t.status === 'On Hold').length;
-                            if (onHoldCount > parsed.length / 2) setShowOnHoldOnly(true);
-                            recordChange();
-                            showToast(`นำเข้าสำเร็จ ${parsed.length} รายการ`);
+                            setTasks(parsed); recordChange(); showToast(`กู้คืนสำเร็จ ${parsed.length} รายการ`);
                         }
                     } catch (err) { alert('Invalid JSON: ' + err.message); }
                 };
@@ -185,31 +239,22 @@
                 e.target.value = '';
             };
 
-            const departments = useMemo(() => {
-                const set = new Set(INITIAL_DEPARTMENTS);
-                tasks.forEach(t => { if(t.dept) set.add(t.dept); });
-                return Array.from(set).sort();
-            }, [tasks]);
-
-            const sourcePool = useMemo(() => {
-                return showOnHoldOnly 
-                    ? tasks.filter(t => t.status === 'On Hold') 
-                    : tasks.filter(t => t.status !== 'On Hold');
-            }, [tasks, showOnHoldOnly]);
-            
+            // --- LOGIC & ANALYTICS ---
+            const sourcePool = useMemo(() => showOnHoldOnly ? tasks.filter(t => t.status === 'On Hold') : tasks.filter(t => t.status !== 'On Hold'), [tasks, showOnHoldOnly]);
             const hierarchyPool = useMemo(() => sourcePool.filter(t => {
                 if (hierarchyMode === 'Main') return !t.parentId;
                 if (hierarchyMode === 'Sub') return !!t.parentId;
                 return true;
             }), [sourcePool, hierarchyMode]);
 
+            // Fix for tabCounters error
             const tabCounters = useMemo(() => {
                 const pool = showOnHoldOnly ? tasks.filter(t => t.status === 'On Hold') : tasks.filter(t => t.status !== 'On Hold');
                 return {
                     All: pool.length,
                     Main: pool.filter(t => !t.parentId).length,
                     Sub: pool.filter(t => !!t.parentId).length
-                }
+                };
             }, [tasks, showOnHoldOnly]);
 
             const dynamicStats = useMemo(() => ({
@@ -220,12 +265,12 @@
 
             const proportions = useMemo(() => {
                 const total = sourcePool.length || 1;
-                const mainCount = sourcePool.filter(t => !t.parentId).length;
-                const subCount = sourcePool.filter(t => !!t.parentId).length;
+                const m = sourcePool.filter(t => !t.parentId).length;
+                const s = sourcePool.filter(t => !!t.parentId).length;
                 return {
-                    mainPct: Math.round((mainCount / total) * 100),
-                    subPct: Math.round((subCount / total) * 100),
-                    mainCount, subCount
+                    mainPct: Math.round((m/total)*100),
+                    subPct: Math.round((s/total)*100),
+                    mainCount: m, subCount: s
                 };
             }, [sourcePool]);
 
@@ -233,7 +278,7 @@
 
             const displayTasks = useMemo(() => hierarchyPool.filter(t => {
                 const search = searchQuery.toLowerCase();
-                const matchSearch = (t.title || "").toLowerCase().includes(search) || (t.notes || "").toLowerCase().includes(search);
+                const matchSearch = t.title.toLowerCase().includes(search) || (t.notes || "").toLowerCase().includes(search);
                 const matchDept = filterDept === 'All' || t.dept === filterDept;
                 let matchStat = true;
                 if (!showOnHoldOnly) {
@@ -243,10 +288,8 @@
                 return matchSearch && matchDept && matchStat;
             }), [hierarchyPool, searchQuery, filterDept, statFilter, showOnHoldOnly]);
 
-            const timelineQueue = useMemo(() => {
-                const base = showOnHoldOnly ? hierarchyPool : hierarchyPool.filter(t => t.status !== 'Done');
-                return [...base].sort((a,b) => (parseDate(a.startDate) || 0) - (parseDate(b.startDate) || 0));
-            }, [hierarchyPool, showOnHoldOnly]);
+            const timelineQueue = useMemo(() => (showOnHoldOnly ? hierarchyPool : hierarchyPool.filter(t => t.status !== 'Done'))
+                .sort((a,b) => (parseDate(a.startDate) || 0) - (parseDate(b.startDate) || 0)), [hierarchyPool, showOnHoldOnly]);
 
             const timelineDates = useMemo(() => {
                 let min = new Date(); let max = new Date();
@@ -258,7 +301,7 @@
                         if (end && end > max) max = new Date(end);
                     });
                 }
-                min.setDate(min.getDate() - 10); max.setDate(max.getDate() + 20);
+                min.setDate(min.getDate() - 5); max.setDate(max.getDate() + 21);
                 const dates = []; let curr = new Date(min);
                 while (curr <= max && dates.length < 1000) {
                     dates.push(new Date(curr)); 
@@ -267,12 +310,13 @@
                 return dates;
             }, [timelineQueue]);
 
+            // Fix for missing timelineMonths error
             const timelineMonths = useMemo(() => {
                 const months = [];
                 timelineDates.forEach((date, index) => {
-                    const monthLabel = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-                    if (months.length === 0 || months[months.length - 1].label !== monthLabel) {
-                        months.push({ label: monthLabel, startIndex: index, count: 1 });
+                    const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                    if (months.length === 0 || months[months.length - 1].label !== label) {
+                        months.push({ label, startIndex: index, count: 1 });
                     } else months[months.length - 1].count++;
                 });
                 return months;
@@ -281,34 +325,14 @@
             const todayIndex = useMemo(() => timelineDates.findIndex(d => d.toDateString() === new Date().toDateString()), [timelineDates]);
 
             const handleAction = (type, data) => {
-                if (type === 'edit') { 
-                    setEditingTask(data); 
-                    setFormData({
-                        ...data, 
-                        startDate: formatDateForInput(data.startDate),
-                        dueDate: formatDateForInput(data.dueDate),
-                        isManualHierarchy: true
-                    }); 
-                    setIsModalOpen(true); 
-                }
-                if (type === 'delete') { 
-                    setDeleteConfirmTask(data); 
-                }
+                if (type === 'edit') { setEditingTask(data); setFormData({...data}); setIsModalOpen(true); }
+                if (type === 'delete') { if(confirm('ต้องการลบรายการนี้ใช่หรือไม่?')) { setTasks(tasks.filter(t => t.id !== data.id)); recordChange(); showToast('ลบรายการสำเร็จ'); } }
                 if (type === 'status') { setTasks(tasks.map(t => t.id === data.id ? {...t, status: data.newStatus} : t)); recordChange(); }
                 if (type === 'hierarchy') { setTasks(tasks.map(t => t.id === data.id ? {...t, parentId: data.parentId} : t)); recordChange(); }
             };
 
-            const confirmDelete = () => {
-                if (deleteConfirmTask) {
-                    setTasks(tasks.filter(t => t.id !== deleteConfirmTask.id));
-                    recordChange();
-                    setDeleteConfirmTask(null);
-                    showToast('ลบงานเรียบร้อยแล้ว');
-                }
-            };
-
             const [formData, setFormData] = useState({ 
-                title: '', dept: INITIAL_DEPARTMENTS[0], priority: 'Medium', status: 'To Do', category: '', notes: '',
+                title: '', dept: DEPARTMENTS[10], priority: 'Medium', status: 'To Do', category: '', notes: '',
                 startDate: '', dueDate: '', parentId: null, isManualHierarchy: false
             });
 
@@ -326,8 +350,7 @@
                 e.preventDefault();
                 if (editingTask) setTasks(tasks.map(t => t.id === editingTask.id ? {...formData, id: t.id} : t));
                 else setTasks([...tasks, {...formData, id: Date.now().toString()}]);
-                recordChange();
-                setIsModalOpen(false);
+                recordChange(); setIsModalOpen(false); showToast(editingTask ? 'อัปเดตงานสำเร็จ' : 'สร้างงานสำเร็จ');
             };
 
             useEffect(() => {
@@ -338,403 +361,200 @@
                 }
             }, [viewMode, todayIndex]);
 
+            const TaskCard = ({ task }) => (
+                <div onClick={() => handleAction('edit', task)} className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm hover:shadow-xl transition-all cursor-pointer relative overflow-hidden group mb-4">
+                    <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${task.priority === 'High' ? 'bg-rose-500 shadow-md' : 'bg-indigo-500'}`} />
+                    <div className="flex justify-between items-start mb-3">
+                        <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${task.priority === 'High' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'}`}>{task.priority}</span>
+                        <div className="flex gap-2">
+                            <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">{task.parentId ? 'SUB' : 'MAIN'}</span>
+                            <button onClick={(e) => {e.stopPropagation(); handleAction('delete', task)}} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 transition-all bg-transparent border-none p-1"><Icon name="trash-2" size={14}/></button>
+                        </div>
+                    </div>
+                    <h4 className="text-[15px] font-bold text-slate-800 leading-snug mb-3 group-hover:text-indigo-600 transition-colors">{cleanText(task.title)}</h4>
+                    <div className="flex justify-between items-center text-[10px] font-bold border-b border-slate-50 pb-3 mb-4 text-slate-400 uppercase tracking-wider">
+                        <span className="flex items-center gap-1.5 truncate max-w-[150px]"><Icon name="users" size={12} className="text-indigo-400 shrink-0"/> {task.dept}</span>
+                        <span className="font-mono bg-slate-50 px-2 py-0.5 rounded">{task.dueDate || '-'}</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                        {['Done', 'In Progress', 'On Hold'].map(st => (
+                            <button key={st} onClick={(e) => { e.stopPropagation(); handleAction('status', {id: task.id, newStatus: st}) }} className={`flex-1 py-1.5 rounded-xl text-[8px] font-black uppercase transition-all ${task.status === st ? (st==='Done'?'bg-emerald-600 text-white shadow-md':st==='On Hold'?'bg-rose-500 text-white shadow-md':'bg-indigo-600 text-white shadow-md') : 'bg-slate-50 text-slate-300 hover:bg-slate-100'}`}>{st === 'In Progress' ? 'Working' : st}</button>
+                        ))}
+                    </div>
+                </div>
+            );
+
             return (
-                <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans pb-10">
+                <div className="min-h-screen pb-20 text-slate-900 font-sans bg-[#f8fafc]">
                     {toast && (
                         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[300] bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-fadeIn">
                             <Icon name="check-circle" className="text-emerald-400" />
                             <span className="text-sm font-bold uppercase tracking-tight">{toast}</span>
                         </div>
                     )}
-                    
+
                     <nav className="glass-header border-b border-slate-200 sticky top-0 z-[100] px-8 py-4 shadow-sm flex flex-wrap justify-between items-center gap-4">
-                        <div className="flex items-center gap-4">
-                            <div className="bg-indigo-600 p-2.5 rounded-2xl text-white shadow-xl shadow-indigo-100"><Icon name="layout-dashboard" size={24}/></div>
+                        <div className="flex items-center gap-3">
+                            <div className="bg-slate-900 p-2.5 rounded-xl text-white shadow-lg rotate-3"><Icon name="zap" size={20}/></div>
                             <div>
-                                <h1 className="text-lg font-black tracking-tight uppercase leading-none">Executive Console</h1>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-widest">Update: <span className="text-indigo-600">{lastUpdated}</span></p>
+                                <h1 className="text-lg font-black tracking-tight uppercase leading-none">VibeTask <span className="text-indigo-600 font-black">Pro</span></h1>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase mt-1 tracking-widest leading-none">Sync: <span className="text-indigo-500 font-black">{lastUpdated}</span></p>
                             </div>
                         </div>
 
                         <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner">
-                            {['Board', 'Timeline', 'Tasks'].map(v => (
-                                <button key={v} onClick={() => setViewMode(v)} className={`px-6 py-2.5 rounded-xl text-[11px] font-black transition-all ${viewMode === v ? 'bg-white text-indigo-600 shadow-md transform scale-105' : 'text-slate-400 hover:text-slate-600'}`}>
-                                    {v.toUpperCase()}
-                                </button>
-                            ))}
+                            {['Board', 'Timeline', 'Tasks'].map(v => (<button key={v} onClick={() => setViewMode(v)} className={`px-6 py-2 rounded-xl text-[10px] font-black transition-all ${viewMode === v ? 'bg-white text-slate-900 shadow-md transform scale-105' : 'text-slate-400 hover:text-slate-600'}`}>{v.toUpperCase()}</button>))}
                         </div>
 
-                        <div className="flex items-center gap-3">
-                            <label className="bg-white border border-slate-200 text-slate-500 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase cursor-pointer flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm">
-                                <Icon name="file-up" size={14}/> Import JSON <input type="file" accept=".json" className="hidden" onChange={handleJSONImport}/>
-                            </label>
-                            <button onClick={handleExportJSON} className="bg-white border border-slate-200 text-slate-500 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm">
-                                <Icon name="file-down" size={14}/> Export
-                            </button>
-                            <button onClick={() => {setEditingTask(null); setIsModalOpen(true)}} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-[12px] flex items-center gap-2 shadow-xl shadow-indigo-100 hover:bg-indigo-700 hover:-translate-y-0.5 active:translate-y-0 transition-all">
-                                <Icon name="plus" size={18} className="stroke-[3.5px]"/>
-                                <span>Create New</span>
-                            </button>
+                        <div className="flex items-center gap-4">
+                            <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-200">
+                                <label className="text-slate-500 hover:bg-white hover:text-indigo-600 cursor-pointer px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase">
+                                    <Icon name="file-text" size={14}/> <span>Import</span><input type="file" accept=".csv" className="hidden" onChange={handleFileUpload}/>
+                                </label>
+                                <div className="w-[1px] h-4 bg-slate-200 self-center mx-1"></div>
+                                <label className="text-slate-500 hover:bg-white hover:text-indigo-600 cursor-pointer px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase">
+                                    <Icon name="file-up" size={14}/> <span>Restore</span><input type="file" accept=".json" className="hidden" onChange={handleJSONImport}/>
+                                </label>
+                                <div className="w-[1px] h-4 bg-slate-200 self-center mx-1"></div>
+                                <button onClick={handleExportJSON} className="text-slate-500 hover:bg-white hover:text-indigo-600 px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase"><Icon name="download-cloud" size={14}/> <span>Export</span></button>
+                            </div>
+                            <button onClick={() => {setEditingTask(null); setIsModalOpen(true)}} className="bg-indigo-600 text-white px-8 py-3.5 rounded-2xl font-black uppercase text-[12px] flex items-center gap-3 shadow-xl shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-1 transition-all border-b-4 border-indigo-900 active:translate-y-0.5 active:border-b-0"><Icon name="plus" size={20} className="stroke-[3.5px]"/> <span>Add New Task</span></button>
                         </div>
                     </nav>
 
-                    <main className="max-w-[100vw] px-8 pt-8">
-                        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                    <main className="max-w-[1400px] mx-auto px-8 pt-10">
+                        {/* Hierarchy Tab Row */}
+                        <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
                             <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm flex gap-1">
-                                {['All', 'Main', 'Sub'].map(m => (
-                                    <button key={m} onClick={() => { setHierarchyMode(m); }} className={`px-12 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${hierarchyMode === m ? 'bg-slate-900 text-white shadow-xl scale-105' : 'text-slate-400 hover:text-slate-500'}`}>
-                                        <span>{m}</span>
-                                        <span className={`px-2 py-0.5 rounded-lg text-[9px] ${hierarchyMode === m ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'}`}>{tabCounters[m]}</span>
+                                {[
+                                    { l: 'All', k: 'All', c: tabCounters.All },
+                                    { l: 'Main', k: 'Main', c: tabCounters.Main },
+                                    { l: 'Sub', k: 'Sub', c: tabCounters.Sub }
+                                ].map(m => (
+                                    <button key={m.k} onClick={() => { setHierarchyMode(m.k); setStatFilter('All'); setShowOnHoldOnly(false); }} className={`px-14 py-3.5 rounded-2xl text-[12px] font-black uppercase tracking-widest flex items-center transition-all ${!showOnHoldOnly && hierarchyMode === m.k ? 'bg-slate-900 text-white shadow-2xl scale-105' : 'text-slate-400 hover:text-slate-600'}`}>
+                                        {m.l} <span className={`tab-counter ${!showOnHoldOnly && hierarchyMode === m.k ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>{m.c}</span>
                                     </button>
                                 ))}
                             </div>
-                            <div className="bg-white p-1.5 rounded-3xl border border-slate-200 shadow-sm">
-                                <button onClick={() => { setShowOnHoldOnly(!showOnHoldOnly); }} className={`px-8 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${showOnHoldOnly ? 'bg-rose-500 text-white shadow-xl scale-105' : 'text-slate-400 hover:bg-rose-50 hover:text-rose-500'}`}>
-                                    <Icon name="pause-circle" size={16}/>
-                                    <span>On Hold Archive ({tasks.filter(t => t.status === 'On Hold').length})</span>
-                                </button>
-                            </div>
+                            <button onClick={() => { setShowOnHoldOnly(!showOnHoldOnly); setStatFilter('All'); }} className={`px-10 py-3.5 rounded-3xl text-[12px] font-black uppercase tracking-widest flex items-center gap-3 transition-all border-2 ${showOnHoldOnly ? 'bg-rose-500 text-white border-transparent shadow-xl scale-105' : 'bg-white text-slate-400 border-slate-200 hover:border-rose-400 hover:text-rose-500'}`}>
+                                <Icon name="pause-circle" size={18}/> <span>On Hold View</span><span className={`tab-counter ${showOnHoldOnly ? 'bg-white text-rose-500' : 'bg-rose-50 text-rose-500'}`}>{tasks.filter(t => t.status === 'On Hold').length}</span>
+                            </button>
                         </div>
 
-                        <section className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
-                            {[
-                                { label: showOnHoldOnly ? 'TOTAL ON HOLD' : 'ACTIVE TASKS', val: dynamicStats.total, key: 'All', color: showOnHoldOnly ? 'bg-rose-600' : 'bg-indigo-600', icon: showOnHoldOnly ? 'pause-circle' : 'briefcase' },
-                                { label: showOnHoldOnly ? 'FINISHED' : 'COMPLETED', val: dynamicStats.finished, key: 'Done', color: showOnHoldOnly ? 'bg-slate-700' : 'bg-emerald-600', icon: 'check-circle-2' },
-                                { label: showOnHoldOnly ? 'PENDING' : 'WORKING', val: dynamicStats.working, key: 'Working', color: showOnHoldOnly ? 'bg-slate-500' : 'bg-amber-500', icon: 'zap' },
-                            ].map(s => (
-                                <div key={s.key} onClick={() => setStatFilter(statFilter === s.key ? 'All' : s.key)} className={`p-8 rounded-[2.5rem] border flex flex-col justify-between h-40 cursor-pointer transition-all active:scale-95 ${statFilter === s.key ? `${s.color} text-white shadow-2xl scale-[1.02]` : `bg-white border-slate-200 shadow-sm hover:border-indigo-300`}`}>
-                                    <div className={`p-3 rounded-2xl w-fit ${statFilter === s.key ? 'bg-white/20' : 'bg-slate-50 text-slate-400'}`}><Icon name={s.icon} size={24} /></div>
-                                    <div><p className={`text-[10px] font-black uppercase tracking-[0.2em] ${statFilter === s.key ? 'text-white/80' : 'text-slate-400'}`}>{s.label}</p><p className="text-4xl font-black leading-none mt-1">{s.val}</p></div>
+                        {/* Metrics */}
+                        <section className="grid grid-cols-1 sm:grid-cols-3 gap-8 mb-10">
+                            {[ { l: showOnHoldOnly ? 'ON HOLD TOTAL' : 'TOTAL SCOPE', v: dynamicStats.total, k: 'All', c: showOnHoldOnly ? 'bg-rose-600' : 'bg-indigo-600', i: 'briefcase' }, { l: 'FINISHED', v: dynamicStats.finished, k: 'Done', c: 'bg-emerald-600', i: 'check-circle' }, { l: 'WORKING', v: dynamicStats.working, k: 'Working', c: 'bg-amber-500', i: 'zap' } ].map(s => (
+                                <div key={s.k} onClick={() => setStatFilter(statFilter === s.k ? 'All' : s.k)} className={`p-10 rounded-[3rem] border flex flex-col justify-between h-48 cursor-pointer transition-all active:scale-95 ${statFilter === s.k ? `${s.c} text-white shadow-2xl scale-105` : `bg-white border-slate-200 shadow-sm hover:border-indigo-400`}`}>
+                                    <div className={`p-4 rounded-2xl w-fit ${statFilter === s.k ? 'bg-white/20' : 'bg-slate-50 text-slate-400'}`}><Icon name={s.i} size={28} /></div>
+                                    <div><p className={`text-[11px] font-black uppercase tracking-[0.2em] ${statFilter === s.k ? 'text-white/80' : 'text-slate-400'}`}>{s.l}</p><p className="text-5xl font-black mt-1 leading-none">{s.v}</p></div>
                                 </div>
                             ))}
                         </section>
 
-                        <section className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm mb-10 animate-fadeIn">
-                            <div className="flex justify-between items-end mb-4">
-                                <div>
-                                    <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-1">Hierarchy Proportion</h3>
-                                    <p className="text-lg font-black text-slate-800 uppercase">Main Task vs Sub Task Ratio</p>
-                                </div>
-                                <div className="text-right">
-                                    <span className="text-2xl font-black text-indigo-600">{proportions.mainCount}</span>
-                                    <span className="text-slate-300 mx-2 text-xl font-light">/</span>
-                                    <span className="text-2xl font-black text-slate-400">{proportions.subCount}</span>
+                        {/* Proportion Bar */}
+                        <section className="bg-white rounded-[2.5rem] p-10 mb-16 border border-slate-100 shadow-sm relative overflow-hidden animate-fadeIn">
+                            <div className="flex justify-between items-center mb-8 px-2">
+                                <div><h3 className="text-[13px] font-black text-slate-800 uppercase tracking-[0.3em] flex items-center gap-3"><Icon name="pie-chart" size={18} className="text-indigo-600"/> Infrastructure Balance</h3><p className="text-[10px] text-slate-400 uppercase font-bold mt-1 tracking-widest leading-none opacity-70">Ratio between Strategy and Detailed Execution</p></div>
+                                <div className="flex gap-10">
+                                    <div className="flex flex-col items-end"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Main Task</span><span className="text-xl font-black text-indigo-600 leading-none">{proportions.mainPct}%</span></div>
+                                    <div className="flex flex-col items-end"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sub Task</span><span className="text-xl font-black text-slate-400 leading-none">{proportions.subPct}%</span></div>
                                 </div>
                             </div>
-                            <div className="h-6 w-full bg-slate-100 rounded-full overflow-hidden flex relative">
-                                <div className="h-full bg-indigo-600 progress-bar-glow flex items-center justify-center text-[10px] text-white font-black transition-all duration-700" style={{ width: `${proportions.mainPct}%` }}>{proportions.mainPct > 10 && `${proportions.mainPct}%`}</div>
-                                <div className="h-full bg-slate-300 flex items-center justify-center text-[10px] text-slate-600 font-black transition-all duration-700" style={{ width: `${proportions.subPct}%` }}>{proportions.subPct > 10 && `${proportions.subPct}%`}</div>
+                            <div className="relative h-4 bg-slate-100 rounded-full overflow-hidden flex shadow-inner">
+                                <div className="h-full bg-indigo-600 transition-all duration-1000 z-10 progress-bar-glow" style={{ width: `${proportions.mainPct}%` }} />
+                                <div className="h-full bg-slate-300 transition-all duration-1000" style={{ width: `${proportions.subPct}%` }} />
                             </div>
                         </section>
 
-                        {viewMode === 'Timeline' ? (
-                            <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-2xl overflow-hidden flex flex-col h-[75vh] animate-fadeIn">
-                                <div className="p-6 bg-slate-900 text-white flex justify-between items-center shrink-0">
-                                    <div className="flex items-center gap-4">
-                                        <div className="bg-white/10 p-2 rounded-xl"><Icon name="gantt-chart" size={24} className="text-indigo-400"/></div>
-                                        <div>
-                                            <h2 className="text-xl font-black uppercase tracking-tight">{showOnHoldOnly ? 'On Hold Backlog' : 'Live Roadmap'}</h2>
-                                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.3em] mt-1 italic opacity-80">Operational Timeline Overview</p>
-                                        </div>
+                        {/* Rendering View Content */}
+                        {viewMode === 'Board' && (
+                            <>
+                                <div className="flex flex-col md:flex-row justify-between items-center gap-6 mb-12 bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
+                                    <div className="flex items-center gap-3 overflow-x-auto no-scrollbar w-full md:w-auto">
+                                        <Icon name="filter" size={18} className="text-slate-300 mr-3 shrink-0" />
+                                        {deptsInUse.map(d => <button key={d} onClick={() => setFilterDept(d)} className={`px-6 py-3 rounded-2xl text-[11px] font-black uppercase transition-all border-2 whitespace-nowrap ${filterDept === d ? 'bg-slate-900 text-white border-transparent shadow-lg' : 'bg-white text-slate-400 border-slate-50 hover:bg-slate-50'}`}>{d}</button>)}
                                     </div>
-                                    <div className="flex items-center gap-6">
-                                        <div className="flex gap-4 items-center">
-                                            <div className="flex items-center gap-2 text-[9px] font-black uppercase"><div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"/> Finished</div>
-                                            <div className="flex items-center gap-2 text-[9px] font-black uppercase"><div className="w-3 h-3 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(79,70,229,0.5)]"/> Working</div>
-                                        </div>
-                                        <div className="h-10 w-px bg-white/10 mx-2"/>
-                                        <div className="text-right">
-                                            <p className="text-2xl font-black text-white">{timelineQueue.length}</p>
-                                            <p className="text-[8px] text-slate-400 font-black uppercase tracking-widest">Active Deliverables</p>
-                                        </div>
-                                    </div>
+                                    <div className="relative w-full md:w-[400px]"><Icon name="search" size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="Search project name..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-slate-50 border-none rounded-3xl text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 outline-none shadow-inner"/></div>
                                 </div>
-
-                                <div className="overflow-auto relative no-scrollbar flex-1 bg-slate-50/30" ref={timelineContainerRef}>
-                                    <div className="min-w-max relative">
-                                        {todayIndex !== -1 && (
-                                            <div className="today-line" style={{ left: `calc(320px + ${todayIndex * 40}px + 19px)` }}>
-                                                <div className="bg-red-500 text-white text-[9px] font-black px-2 py-1 rounded-full absolute -top-8 left-1/2 transform -translate-x-1/2 shadow-lg animate-pulse-soft">TODAY</div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                                    {[ { t: showOnHoldOnly ? 'ON HOLD QUEUE' : 'WORKING', s: 'Working' }, { t: showOnHoldOnly ? 'PAUSED PROJECTS' : 'FINISHED', s: 'Done' } ].map(col => (
+                                        <div key={col.s} className="flex flex-col">
+                                            <div className={`flex items-center justify-between mb-8 px-10 py-5 rounded-[2rem] shadow-xl text-white ${showOnHoldOnly ? 'bg-rose-600' : 'bg-slate-900'}`}><h2 className="font-black uppercase tracking-[0.3em] text-[13px]">{col.t}</h2><span className="text-[11px] font-black bg-white/20 px-5 py-2 rounded-full">{displayTasks.filter(t => col.s === 'Working' ? (t.status !== 'Done') : t.status === 'Done').length}</span></div>
+                                            <div className="space-y-2 min-h-[500px]">
+                                                {displayTasks.filter(t => col.s === 'Working' ? (t.status !== 'Done') : t.status === 'Done').map(t => <TaskCard key={t.id} task={t}/>)}
                                             </div>
-                                        )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
 
-                                        <table className="border-collapse w-full">
-                                            <thead className="sticky top-0 z-[60] shadow-md">
-                                                <tr className="glass-header">
-                                                    <th className="sticky left-0 bg-white border-b border-r border-slate-200 p-4 text-[10px] font-black uppercase text-slate-400 text-left min-w-[320px] z-[70]">Project Information</th>
-                                                    {timelineMonths.map((m, i) => (
-                                                        <th key={i} colSpan={m.count} className="p-3 border-b border-r border-slate-200 bg-slate-50/50 text-[10px] font-black text-slate-500 uppercase text-center tracking-widest border-t border-slate-100">
-                                                            {m.label}
-                                                        </th>
-                                                    ))}
-                                                </tr>
-                                                <tr className="glass-header">
-                                                    <th className="sticky left-0 bg-white border-b border-r border-slate-200 p-4 min-w-[320px] z-[70]">
-                                                        <div className="relative"><Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300"/><input type="text" placeholder="Filter task name..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-9 pr-4 py-2 bg-slate-100/50 rounded-xl text-[10px] font-bold outline-none border border-transparent focus:border-indigo-200 transition-all"/></div>
-                                                    </th>
-                                                    {timelineDates.map((d, i) => (
-                                                        <th key={i} className={`p-2 border-b border-r border-slate-100 min-w-[40px] text-center bg-white ${d.getDay() === 0 || d.getDay() === 6 ? 'weekend-col' : ''}`}>
-                                                            <div className="text-[7px] font-black text-slate-400 uppercase leading-tight">{d.toLocaleDateString('en-US',{weekday:'short'})}</div>
-                                                            <div className={`text-[10px] font-black ${d.toDateString() === new Date().toDateString() ? 'text-red-500' : 'text-slate-700'}`}>{d.getDate()}</div>
-                                                        </th>
-                                                    ))}
-                                                </tr>
-                                            </thead>
-                                            <tbody className="timeline-grid relative">
-                                                {timelineQueue.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase())).map((task, idx) => {
-                                                    const s = parseDate(task.startDate); 
-                                                    const du = parseDate(task.dueDate);
-                                                    return (
-                                                        <tr key={task.id} className="group hover:bg-slate-100/30 transition-colors">
-                                                            <td onClick={() => handleAction('edit', task)} className="sticky left-0 bg-white z-20 p-4 border-b border-r border-slate-200 cursor-pointer shadow-[8px_0_15px_rgba(0,0,0,0.02)]">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${task.priority === 'High' ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]' : task.priority === 'Medium' ? 'bg-amber-500' : 'bg-indigo-400'}`} />
-                                                                    <div className="overflow-hidden">
-                                                                        <div className="text-[12px] font-bold text-slate-700 truncate group-hover:text-indigo-600 transition-colors">{task.title}</div>
-                                                                        <div className="flex items-center gap-2 mt-1">
-                                                                            <span className="text-[8px] font-black text-indigo-400 uppercase tracking-tighter">{task.dept}</span>
-                                                                            <span className="text-[8px] font-bold text-slate-300">•</span>
-                                                                            <span className="text-[8px] font-bold text-slate-400">{task.startDate} - {task.dueDate}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </td>
-                                                            {timelineDates.map((d, i) => {
-                                                                const isInRange = s && du && d >= s && d <= du;
-                                                                const isStart = s && d.toDateString() === s.toDateString();
-                                                                const isEnd = du && d.toDateString() === du.toDateString();
-                                                                return (
-                                                                    <td key={i} className={`border-b border-r border-slate-100 p-0 relative h-[60px] ${d.getDay() === 0 || d.getDay() === 6 ? 'weekend-col' : ''}`}>
-                                                                        {isInRange && (
-                                                                            <div className={`absolute inset-y-3 left-0 right-0 z-10 task-bar-transition
-                                                                                ${task.status === 'Done' ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 shadow-[0_4px_12px_rgba(16,185,129,0.2)]' : 
-                                                                                  task.status === 'On Hold' ? 'bg-gradient-to-r from-rose-500 to-rose-400' : 
-                                                                                  'bg-gradient-to-r from-indigo-600 to-indigo-500 shadow-[0_4px_12px_rgba(79,70,229,0.2)]'}
-                                                                                ${isStart ? 'ml-1 rounded-l-full' : ''} 
-                                                                                ${isEnd ? 'mr-1 rounded-r-full' : ''}
-                                                                            `}>
-                                                                                {(isStart || (i === 0 && isInRange)) && (
-                                                                                    <div className="h-full flex items-center px-3 gap-2 overflow-hidden pointer-events-none">
-                                                                                        <Icon name="clock" size={10} className="text-white shrink-0"/>
-                                                                                        <span className="text-[8px] font-black text-white uppercase whitespace-nowrap opacity-90">{task.status === 'In Progress' ? 'Working' : task.status}</span>
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        )}
-                                                                    </td>
-                                                                );
-                                                            })}
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                        {viewMode === 'Timeline' && (
+                            <div className="bg-white rounded-[3rem] border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[800px] text-left animate-fadeIn">
+                                <div className="overflow-auto relative no-scrollbar" ref={timelineContainerRef}>
+                                    {todayIndex !== -1 && <div className="today-line" style={{ left: `calc(320px + ${todayIndex * 40}px + 19px)` }}><div className="bg-red-500 text-white text-[8px] font-black px-2 py-1 rounded absolute -top-1 left-0 transform -translate-x-1/2 shadow-sm animate-pulse-soft">TODAY</div></div>}
+                                    <table className="w-full border-separate border-spacing-0">
+                                        <thead className="sticky top-0 z-[50]">
+                                            <tr className="glass-header"><th className="sticky left-0 bg-white border-b border-r border-slate-200 p-6 text-[11px] font-black uppercase text-slate-400 min-w-[320px]">Period</th>{timelineMonths.map((m, i) => <th key={i} colSpan={m.count} className="p-3 border-b border-r bg-indigo-50/80 backdrop-blur-md text-[11px] font-black text-indigo-600 uppercase text-center border-t border-indigo-100">{m.label}</th>)}</tr>
+                                            <tr className="glass-header"><th className="sticky left-0 bg-white border-b border-r border-slate-200 p-6 text-[11px] font-black uppercase text-slate-500 min-w-[320px]">Deliverable Name</th>{timelineDates.map((d, i) => <th key={i} className={`p-2 border-b border-r min-w-[40px] text-center bg-white ${d.toDateString() === new Date().toDateString() ? 'bg-indigo-100/50' : ''}`}><div className="text-[9px] font-bold text-slate-400 uppercase">{d.toLocaleDateString('en-US',{weekday:'short'})}</div><div className={`text-[12px] font-black ${d.toDateString() === new Date().toDateString() ? 'text-red-500' : 'text-slate-800'}`}>{d.getDate()}</div></th>)}</tr>
+                                        </thead>
+                                        <tbody>
+                                            {timelineQueue.map(task => {
+                                                const s = parseDate(task.startDate); const du = parseDate(task.dueDate);
+                                                return (<tr key={task.id} className="hover:bg-slate-50/50 group"><td onClick={() => handleAction('edit', task)} className="sticky left-0 bg-white z-20 p-6 border-b border-r text-sm font-bold text-slate-700 cursor-pointer group-hover:bg-slate-50 shadow-[4px_0_10px_rgba(0,0,0,0.03)]"><div className="flex items-center gap-3"><div className={`w-2.5 h-2.5 rounded-full shrink-0 ${task.priority === 'High' ? 'bg-rose-500' : 'bg-indigo-500'}`} /><span className="truncate max-w-[200px]">{cleanText(task.title)}</span></div><div className="text-[10px] font-black text-indigo-400 mt-2 uppercase tracking-widest leading-none">{task.dept}</div></td>{timelineDates.map((d, i) => <td key={i} className="border-b border-r p-0 relative h-16">{s && du && d >= s && d <= du && <div className={`absolute inset-y-5 left-0 right-0 z-0 transition-all ${task.status === 'In Progress' ? 'bg-indigo-600 shadow-xl' : task.status === 'On Hold' ? 'bg-rose-400' : 'bg-slate-200'} ${d.toDateString() === s.toDateString() ? 'rounded-l-full' : ''} ${d.toDateString() === du.toDateString() ? 'rounded-r-full' : ''}`} />}</td>)}</tr>);
+                                            })}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
-                        ) : viewMode === 'Board' ? (
-                            <div className="animate-fadeIn">
-                                <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm">
-                                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar w-full md:w-auto">
-                                        <Icon name="filter" size={16} className="text-slate-300 mr-2" />
-                                        {deptsInUse.map(d => <button key={d} onClick={() => setFilterDept(d)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border whitespace-nowrap ${filterDept === d ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}>{d}</button>)}
-                                    </div>
-                                    <div className="relative w-full md:w-80"><Icon name="search" size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="Search tasks..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 border-none rounded-2xl text-sm font-bold outline-none shadow-inner"/></div>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                    {[ { title: showOnHoldOnly ? 'ON HOLD QUEUE' : 'WORKING', status: 'Working' }, { title: showOnHoldOnly ? 'READY TO RESUME' : 'COMPLETED', status: 'Done' } ].map(col => {
-                                        const filtered = displayTasks.filter(t => col.status === 'Working' ? (t.status !== 'Done') : t.status === 'Done');
-                                        return (
-                                            <div key={col.status} className="flex flex-col">
-                                                <div className={`flex items-center justify-between mb-6 px-7 py-4 rounded-2xl shadow-xl text-white ${showOnHoldOnly ? 'bg-rose-500' : 'bg-slate-900'}`}>
-                                                    <h2 className="font-black uppercase tracking-[0.25em] text-[12px]">{col.title}</h2>
-                                                    <span className="text-[11px] font-black bg-white/20 px-4 py-1.5 rounded-full">{filtered.length}</span>
-                                                </div>
-                                                <div className="space-y-4">
-                                                    {filtered.map(t => (
-                                                        <div key={t.id} onClick={() => handleAction('edit', t)} className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all cursor-pointer relative overflow-hidden group">
-                                                            <div className={`absolute left-0 top-0 bottom-0 w-2 ${t.priority === 'High' ? 'bg-rose-500' : t.priority === 'Medium' ? 'bg-amber-500' : 'bg-indigo-500'}`} />
-                                                            <div className="flex justify-between items-start mb-3">
-                                                                <span className="text-[9px] font-black uppercase text-indigo-500 tracking-wider">{t.parentId ? 'Sub-Deliverable' : 'Main Project'}</span>
-                                                                <button onClick={(e) => {e.stopPropagation(); handleAction('delete', t)}} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-rose-500 p-1 transition-all shadow-none bg-transparent border-none">
-                                                                    <Icon name="trash-2" size={16}/>
-                                                                </button>
-                                                            </div>
-                                                            <h4 className="text-md font-bold text-slate-800 leading-snug mb-3">{t.title}</h4>
-                                                            
-                                                            {/* Status Control Buttons added back to Board cards */}
-                                                            <div className="flex gap-1.5 mb-4">
-                                                                {['Done', 'In Progress', 'On Hold'].map(st => (
-                                                                    <button 
-                                                                        key={st} 
-                                                                        onClick={(e) => { e.stopPropagation(); handleAction('status', {id: t.id, newStatus: st}) }} 
-                                                                        className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all ${t.status === st ? (st==='Done'?'bg-emerald-500 text-white':st==='On Hold'?'bg-rose-500 text-white':'bg-indigo-600 text-white') : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
-                                                                    >
-                                                                        {st === 'In Progress' ? 'Working' : st}
-                                                                    </button>
-                                                                ))}
-                                                            </div>
+                        )}
 
-                                                            <div className="flex justify-between items-center text-[10px] font-bold mt-2 pt-4 border-t border-slate-50">
-                                                                <div className="flex items-center gap-2"><Icon name="building" size={12} className="text-slate-300"/><span className="text-slate-600 uppercase tracking-tight">{t.dept}</span></div>
-                                                                <div className="flex items-center gap-2"><Icon name="calendar" size={12} className="text-slate-300"/><span className="text-slate-400 font-mono">{t.dueDate || '-'}</span></div>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                        {viewMode === 'Tasks' && (
+                            <div className="bg-white rounded-[3.5rem] border border-slate-200 shadow-sm mb-20 overflow-hidden animate-fadeIn">
+                                <div className="p-10 border-b border-slate-100 bg-slate-50"><h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Rapid Scope Manager</h2><p className="text-[11px] font-bold text-slate-400 uppercase mt-1 italic tracking-[0.2em]">Bulk Override for Level & Status</p></div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left">
+                                        <thead><tr className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] border-b"><th className="p-8">Deliverable Task</th><th className="p-8 text-center">Hierarchy</th><th className="p-8 text-center">Status Control</th><th className="p-8 text-right">Actions</th></tr></thead>
+                                        <tbody className="divide-y divide-slate-50">
+                                            {displayTasks.map(task => (
+                                                <tr key={task.id} className="hover:bg-slate-50/50 transition-colors group">
+                                                    <td className="p-8"><p className="text-md font-bold text-slate-800 mb-1 leading-tight">{cleanText(task.title)}</p><div className="flex gap-6 text-[10px] font-black uppercase text-slate-400 tracking-widest"><span>Dept: <b className="text-indigo-500">{task.dept}</b></span><span>Due: <b className="text-slate-600 font-mono">{task.dueDate || '-'}</b></span></div></td>
+                                                    <td className="p-8 text-center"><div className="flex bg-slate-100 p-1 rounded-xl w-fit mx-auto shadow-inner"><button onClick={() => handleAction('hierarchy', {id: task.id, parentId: null})} className={`px-8 py-2.5 rounded-xl text-[11px] font-black uppercase transition-all ${!task.parentId ? 'bg-white text-indigo-600 shadow-md transform scale-105' : 'text-slate-400 opacity-60'}`}>Main</button><button onClick={() => handleAction('hierarchy', {id: task.id, parentId: 'sub-task'})} className={`px-8 py-2.5 rounded-xl text-[11px] font-black uppercase transition-all ${task.parentId ? 'bg-indigo-600 text-white shadow-md transform scale-105' : 'text-slate-400 opacity-60'}`}>Sub</button></div></td>
+                                                    <td className="p-8 text-center"><div className="flex gap-2 justify-center">{['Done', 'In Progress', 'On Hold'].map(st => (<button key={st} onClick={() => handleAction('status', {id: task.id, newStatus: st})} className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all ${task.status === st ? (st==='Done'?'bg-emerald-600 text-white':st==='On Hold'?'bg-rose-500 text-white':'bg-amber-500 text-white') : 'bg-white text-slate-300 border border-slate-100 hover:border-slate-300'}`}>{st === 'In Progress' ? 'Working' : st}</button>))}</div></td>
+                                                    <td className="p-8 text-right flex justify-end gap-3 items-center"><button onClick={() => handleAction('edit', task)} className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-100 shadow-sm transition-all"><Icon name="edit-2" size={18}/></button><button onClick={() => handleAction('delete', task)} className="p-3 bg-rose-50 text-rose-300 hover:text-rose-600 rounded-2xl shadow-sm transition-all"><Icon name="trash-2" size={18}/></button></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 </div>
-                            </div>
-                        ) : (
-                            <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden animate-fadeIn mb-20">
-                                <table className="w-full text-left">
-                                    <thead className="bg-slate-50 border-b border-slate-200">
-                                        <tr className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
-                                            <th className="p-8">Deliverable Details</th>
-                                            <th className="p-8 text-center">Hierarchy</th>
-                                            <th className="p-8 text-center">Status Control</th>
-                                            <th className="p-8 text-right">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {displayTasks.map(task => (
-                                            <tr key={task.id} className="hover:bg-slate-50/50 transition-colors group">
-                                                <td className="p-8">
-                                                    <p className="text-sm font-bold text-slate-800 mb-1">{task.title}</p>
-                                                    <div className="flex gap-4 text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                                                        <span>Dept: <b className="text-indigo-500">{task.dept}</b></span>
-                                                        <span>Priority: <b className={`${task.priority === 'High' ? 'text-rose-500' : 'text-slate-600'}`}>{task.priority}</b></span>
-                                                    </div>
-                                                </td>
-                                                <td className="p-8 text-center">
-                                                    <div className="flex bg-slate-100 p-1.5 rounded-2xl w-fit mx-auto shadow-inner">
-                                                        <button 
-                                                            onClick={() => handleAction('hierarchy', {id: task.id, parentId: null})} 
-                                                            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${!task.parentId ? 'bg-white text-indigo-600 shadow-md transform scale-105' : 'text-slate-400'}`}
-                                                        >
-                                                            Main
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleAction('hierarchy', {id: task.id, parentId: 'sub-task'})} 
-                                                            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${task.parentId ? 'bg-indigo-600 text-white shadow-md transform scale-105' : 'text-slate-400'}`}
-                                                        >
-                                                            Sub
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                                <td className="p-8">
-                                                    <div className="flex gap-2 justify-center">
-                                                        {['Done', 'In Progress', 'On Hold'].map(st => (
-                                                            <button key={st} onClick={() => handleAction('status', {id: task.id, newStatus: st})} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${task.status === st ? (st==='Done'?'bg-emerald-500 text-white shadow-lg':st==='On Hold'?'bg-rose-500 text-white shadow-lg':'bg-indigo-600 text-white shadow-lg') : 'bg-white text-slate-300 border border-slate-100 hover:bg-slate-50'}`}>
-                                                                {st === 'In Progress' ? 'Working' : st}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </td>
-                                                <td className="p-8 text-right">
-                                                    <div className="flex justify-end gap-3">
-                                                        <button 
-                                                            onClick={() => handleAction('edit', task)} 
-                                                            className="btn-action btn-edit w-10 h-10 rounded-xl shadow-sm"
-                                                            title="แก้ไขงาน"
-                                                        >
-                                                            <Icon name="edit" size={16}/>
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleAction('delete', task)} 
-                                                            className="btn-action btn-delete w-10 h-10 rounded-xl shadow-sm"
-                                                            title="ลบงาน"
-                                                        >
-                                                            <Icon name="trash-2" size={16}/>
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
                             </div>
                         )}
                     </main>
 
-                    {/* Registry Modal */}
+                    {/* Task Modal */}
                     {isModalOpen && (
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in duration-300">
-                                <div className="px-10 py-8 bg-slate-900 text-white flex justify-between items-center">
-                                    <div><h2 className="text-2xl font-black tracking-tighter uppercase">{editingTask ? 'Modify Registry' : 'New Strategic Entry'}</h2></div>
-                                    <button onClick={() => setIsModalOpen(false)} className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl transition-all"><Icon name="x" size={24}/></button>
+                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[200] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-[4rem] shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in duration-300">
+                                <div className="px-12 py-10 bg-slate-900 text-white flex justify-between items-center relative overflow-hidden">
+                                    <div className="relative z-10"><h2 className="text-3xl font-black tracking-tighter uppercase text-white">{editingTask ? 'Edit Task' : 'New Entry'}</h2><p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.4em] mt-1 italic leading-none">Enterprise Console V31</p></div>
+                                    <button onClick={() => setIsModalOpen(false)} className="p-4 bg-white/10 hover:bg-white/20 rounded-3xl transition-all"><Icon name="x" size={28} className="text-white"/></button>
                                 </div>
-                                <form onSubmit={saveForm} className="p-10 space-y-7">
-                                    <div className="space-y-2">
-                                        <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-3">Task Deliverable Name</label>
-                                        <input type="text" required autoFocus className="w-full px-8 py-4 rounded-3xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-slate-800 text-md shadow-inner transition-all" value={formData.title} onChange={e => handleTitleChange(e.target.value)}/>
+                                <form onSubmit={saveForm} className="p-12 space-y-8 text-slate-900">
+                                    <div className="space-y-2"><label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-4">Task Name</label><input type="text" required autoFocus className="w-full px-8 py-5 rounded-[2.5rem] bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-lg shadow-inner" value={formData.title} onChange={e => handleTitleChange(e.target.value)}/></div>
+                                    <div className="grid grid-cols-2 gap-6 text-slate-900">
+                                        <div className="space-y-2"><label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-4">Start Date</label><input type="date" className="w-full px-7 py-5 rounded-3xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-sm shadow-inner" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})}/></div>
+                                        <div className="space-y-2"><label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-4">Due Date</label><input type="date" className="w-full px-7 py-5 rounded-3xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-bold text-sm shadow-inner" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})}/></div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-6">
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-3">Start Date</label>
-                                            <input type="date" className="w-full px-6 py-4 rounded-2xl bg-slate-50 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})}/>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-3">Due Date</label>
-                                            <input type="date" className="w-full px-6 py-4 rounded-2xl bg-slate-50 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})}/>
-                                        </div>
+                                    <div className="grid grid-cols-2 gap-6 text-slate-900">
+                                        <div className="space-y-2"><label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-4">Department</label><select className="w-full px-8 py-5 rounded-3xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-sm cursor-pointer shadow-inner appearance-none transition-all" value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}>{DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}</select></div>
+                                        <div className="space-y-2"><label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-4">Hierarchy</label><div className="flex bg-slate-100 p-1.5 rounded-[2rem]"><button type="button" onClick={() => setFormData({...formData, parentId: null})} className={`flex-1 py-4 rounded-3xl text-[11px] font-black uppercase transition-all ${!formData.parentId ? 'bg-white text-indigo-600 shadow-lg' : 'text-slate-400'}`}>Main</button><button type="button" onClick={() => setFormData({...formData, parentId: 'sub-task'})} className={`flex-1 py-4 rounded-3xl text-[11px] font-black uppercase transition-all ${formData.parentId ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>Sub</button></div></div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-6">
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-3">Department</label>
-                                            <select className="w-full px-6 py-4 rounded-2xl bg-slate-50 outline-none font-black text-sm cursor-pointer" value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})}>
-                                                {departments.map(d => <option key={d} value={d}>{d}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-3">Hierarchy</label>
-                                            <div className="flex bg-slate-100 p-1.5 rounded-2xl">
-                                                <button type="button" onClick={() => setFormData({...formData, parentId: null, isManualHierarchy: true})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${!formData.parentId ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400'}`}>Main</button>
-                                                <button type="button" onClick={() => setFormData({...formData, parentId: 'sub-task', isManualHierarchy: true})} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${formData.parentId ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>Sub</button>
-                                            </div>
-                                        </div>
+                                    <div className="grid grid-cols-2 gap-6 text-slate-900">
+                                        <div className="space-y-2"><label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-4">Status</label><select className="w-full px-7 py-5 rounded-3xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-sm cursor-pointer shadow-inner appearance-none transition-all" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}><option value="To Do">To Do</option><option value="In Progress">In Progress</option><option value="Done">Done</option><option value="On Hold">On Hold</option></select></div>
+                                        <div className="space-y-2"><label className="text-[11px] font-black uppercase text-slate-400 tracking-widest ml-4">Priority</label><select className="w-full px-7 py-5 rounded-3xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 outline-none font-black text-sm cursor-pointer shadow-inner appearance-none transition-all" value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})}><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High Priority</option></select></div>
                                     </div>
-                                    <div className="pt-6 flex gap-4">
-                                        <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-slate-100 text-slate-500 py-5 rounded-[1.5rem] font-black uppercase text-[12px] hover:bg-slate-200 transition-all">Cancel</button>
-                                        <button type="submit" className="flex-[2] bg-indigo-600 text-white py-5 rounded-[1.5rem] font-black uppercase text-[12px] shadow-2xl shadow-indigo-200 hover:bg-indigo-700 transition-all">Apply Data Changes</button>
-                                    </div>
+                                    <div className="pt-8 flex gap-5"><button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-slate-100 text-slate-500 py-6 rounded-3xl font-black uppercase text-[12px] hover:bg-slate-200 transition-all">Discard</button><button type="submit" className="flex-[2] bg-indigo-600 text-white py-6 rounded-[2.5rem] font-black uppercase text-[12px] shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Save Changes</button></div>
                                 </form>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Custom Delete Confirmation Modal */}
-                    {deleteConfirmTask && (
-                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[250] flex items-center justify-center p-4 animate-fadeIn">
-                            <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-200">
-                                <div className="p-8 text-center">
-                                    <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                                        <Icon name="trash-2" size={32} />
-                                    </div>
-                                    <h3 className="text-xl font-black text-slate-800 uppercase mb-2">ยืนยันการลบ?</h3>
-                                    <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-                                        คุณแน่ใจหรือไม่ว่าต้องการลบงาน <br/>
-                                        <span className="font-bold text-slate-700">"{deleteConfirmTask.title}"</span> <br/>
-                                        การกระทำนี้ไม่สามารถย้อนกลับได้
-                                    </p>
-                                    <div className="flex gap-3">
-                                        <button 
-                                            onClick={() => setDeleteConfirmTask(null)} 
-                                            className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-500 font-black uppercase text-[11px] hover:bg-slate-200 transition-all"
-                                        >
-                                            ยกเลิก
-                                        </button>
-                                        <button 
-                                            onClick={confirmDelete} 
-                                            className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all"
-                                        >
-                                            ลบรายการ
-                                        </button>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     )}
